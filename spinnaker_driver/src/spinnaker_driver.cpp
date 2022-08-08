@@ -392,7 +392,7 @@ bool SpinnakerDriverGigE::start(AcquiredImageCallback acquisition_callback, floa
         if (IsAvailable(ptrFrameRate) && IsWritable(ptrFrameRate)) {
           double max = ptrFrameRate->GetMax();
           double min = ptrFrameRate->GetMin();
-          double desired = static_cast<double> frame_rate;
+          double desired = static_cast<double>(frame_rate);
           if ( (min > desired) || (max < desired) ) {
             if (min > desired) {
               std::cout << "minimum frame rate: " << min <<

@@ -70,7 +70,8 @@ public:
 
       cv::Mat frame = cv::Mat(
         static_cast<int>(img->height_), static_cast<int>(img->width_),
-        (3 == img->channels_) ? CV_8UC3 : CV_8UC1, reinterpret_cast<void *>(img->data_));
+        (3 == img->channels_) ? CV_8UC3 : CV_8UC1,
+        const_cast<void *>(reinterpret_cast<const void *>(img->data_)));
       if ((spinnaker_driver::SupportedPixelFormat::PIXEL_FORMAT_GB8 == img->pixel_format_) ||
         (spinnaker_driver::SupportedPixelFormat::PIXEL_FORMAT_RG8 == img->pixel_format_))
       {
