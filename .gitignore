@@ -1,0 +1,5 @@
+# Local VS Code config files
+.vscode/
+
+# CMake/Colon build folder(s)
+build/

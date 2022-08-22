@@ -198,12 +198,10 @@ int main(int argc, char * argv[])
     }
   }
 
-  if (list_cameras || connect_camera) {
-    try {
-      gigev_driver.release();
-    } catch (const std::exception & e) {
-      std::cerr << "User forced gigev_driver.release exception: " << e.what() << '\n';
-    }
+  try {
+    gigev_driver.release();
+  } catch (const std::exception & e) {
+    std::cerr << "User forced gigev_driver.release exception: " << e.what() << '\n';
   }
 
   std::cout << std::flush;
