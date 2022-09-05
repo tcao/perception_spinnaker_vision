@@ -26,30 +26,53 @@
 #include <memory>
 #include <functional>
 #include <thread>
+#include <vector>
+#include <string>
 
 namespace spinnaker_driver
 {
 // @remark OpenCV default Pixel format is BGR8
-enum SupportedPixelFormat
+// @remark Check the following link at Bayer patterns' corresponding OpenCV transform
+// @remark https://www.baumer.com/be/en/service-support/technical-information-industrial-cameras/baumer-gapi-and-opencv/a/baumer-gapi-and-opencv
+// @remark Although it doesn't seem to be correct for FLIR camera
+enum SupportedPixelFormat_e
 {
-  PIXEL_FORMAT_MONO8,   // PixelFormat_Mono8 (GS3-PGE-60S6M) ->
-  PIXEL_FORMAT_GB8,     // PixelFormat_BayerGB8 (BFLY-PGE-50S5C) -> cvtColor CV_BayerGR2BGR
-  PIXEL_FORMAT_RG8,     // PixelFormat_BayerRG8 -> cvtColor CV_BayerBG2BGR
+  PIXEL_FORMAT_MONO8,   // PixelFormat_Mono8 (GS3-PGE-60S6M) -> no need to convert
+  PIXEL_FORMAT_GB8,     // PixelFormat_BayerGB8 -> (not tested) cvtColor CV_BayerGR2BGR
+  PIXEL_FORMAT_RG8,     // PixelFormat_BayerRG8 (tested BFLY-PGE-50S5C)-> cvtColor CV_BayerBG2BGR
+                        // https://www.baumer.com/be/en/service-support/technical-information-industrial-cameras/baumer-gapi-and-opencv/a/baumer-gapi-and-opencv
                         // According AcquisionOpenCV.cpp:
                         // 1) pResultImage->Convert(PixelFormat_RGB8, HQ_LINEAR)
                         // 2) pass PixelFormat_BayerRG8 to OpenCV, then cvtColor COLOR_BayerRG2RGB
+                        // But 2) is not the same (PixelFormat_BayerRG8 -> cvtColor CV_BayerBG2BGR)
   PIXEL_FORMAT_BGR8,    // PixelFormat_BGR8
-  PIXEL_FORMAT_RGB8,    // PixelFormat_RGB8
   PIXEL_FORMAT_INVALID,
 };
 
-enum SupportedCameraType
+enum SupportedCameraType_e
 {
   CAMERA_TYPE_ALL,      // Any type
   CAMERA_TYPE_GIGE,     // Supported
   CAMERA_TYPE_U3V,      // Not yet supported
 };
 
+enum ConfigurableParameter_e
+{
+  CONFIG_VIDEO_MODE,    // configurable video mode
+  CONFIG_FRAME_RATE,    // configurable frame rate
+  CONFIG_IMAGE_WIDTH,   // configurable image width
+  CONFIG_IMAGE_HEIGHT,  // configurable image height
+};
+
+struct ConfigurableParameter
+{
+  ConfigurableParameter_e type;
+  void * data;
+};
+
+/**
+ * @brief This is a HAL wrapper for acquired image
+ */
 struct AcquiredImage
 {
   AcquiredImage()
@@ -85,6 +108,25 @@ typedef std::shared_ptr<AcquiredImage> AcquiredImagePtr;
 typedef std::shared_ptr<const AcquiredImage> AcquiredImageConstPtr;
 typedef std::function<void (const AcquiredImage * img)> AcquiredImageCallback;
 
+struct ImageDimension
+{
+  uint32_t width;
+  uint32_t height;
+};
+
+/**
+ * @brief This is a HAL wrapper for key camera parameters
+ */
+struct CameraParameters
+{
+  std::string pixel_format;
+  std::string video_mode;
+  float frame_rate;
+  float max_frame_rate;
+  ImageDimension image_dimension;
+  ImageDimension max_image_dimension;
+};
+
 class SpinnakerDriver
 {
 public:
@@ -102,9 +144,10 @@ public:
   /**
    * @brief Connect to the specified camera
    *
+   * @param camera_index which camera to connect, default to the first camera
    * @param camera_type type of camera - current it supports only Spinnaker::InterfaceTypeEnum::InterfaceType_GigEVision
    *  Note default argument value is not part of signature
-   * @param camera_index which camera to connect, default to the first camera
+   * @param parameters
    * @return true when specified camera is successfully connected
    * @return false failed to connect specified camera, or wrong index is provided
    *
@@ -116,7 +159,8 @@ public:
    */
   virtual bool connect(
     uint32_t camera_index = 0,
-    SupportedCameraType camera_type = CAMERA_TYPE_ALL) = 0;
+    SupportedCameraType_e camera_type = CAMERA_TYPE_ALL,
+    CameraParameters * parameters = nullptr) = 0;
 
   /**
    * @brief Start camera
@@ -148,8 +192,27 @@ public:
    *  In GigE camera, the same camera may show up multitple times,
    *  so it is important to specified which camera (from which interface)
    */
-  virtual bool list(SupportedCameraType camera_type = CAMERA_TYPE_ALL) = 0;
+  virtual bool list(SupportedCameraType_e camera_type = CAMERA_TYPE_ALL) = 0;
 
+  /**
+   * @brief Set the videomode
+   *
+   * @param video_mode
+   * @return true
+   * @return false
+   */
+  virtual bool set_videomode(uint32_t camera_index = 0, uint32_t video_mode = 0) = 0;
+
+  /**
+   * @brief Set the configurable paramters object
+   *
+   * @param camera_index Which camera
+   * @param parameters Parameters specified to be configured
+   * @return true
+   * @return false
+   */
+  virtual bool set_configurable_parameters(
+    uint32_t camera_index, std::vector<ConfigurableParameter> & parameters) = 0;
   /**
    * @brief Release driver instance
    *
@@ -170,13 +233,20 @@ public:
   SpinnakerDriverGigE();
   virtual ~SpinnakerDriverGigE();
   bool connect(
-    uint32_t camera_index = 0, SupportedCameraType camera_type = CAMERA_TYPE_GIGE) override;
+    uint32_t camera_index = 0,
+    SupportedCameraType_e camera_type = CAMERA_TYPE_GIGE,
+    CameraParameters * parameters = nullptr) override;
   bool start(AcquiredImageCallback acquisition_callback, float frame_rate = 1.0f) override;
   bool stop() override;
-  bool list(SupportedCameraType camera_type = CAMERA_TYPE_GIGE) override;
+  bool list(SupportedCameraType_e camera_type = CAMERA_TYPE_GIGE) override;
+  bool set_videomode(uint32_t camera_index = 0, uint32_t video_mode = 0) override;
+  bool set_configurable_parameters(
+    uint32_t camera_index, std::vector<ConfigurableParameter> & parameters) override;
+
   void release() override;
 
 protected:
+  bool retrieve_parameters(CameraParameters * parameters, bool extra_details = false);
   void run() override;
   uint32_t cameraIndex_;
   AcquiredImageCallback acquisitionCallback_;

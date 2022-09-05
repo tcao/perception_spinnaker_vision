@@ -26,6 +26,7 @@
 #include <numeric>
 #include <iomanip>
 #include <memory>
+#include <vector>
 #include <string>
 
 #include "spinnaker_driver/spinnaker_driver.hpp"
@@ -116,8 +117,10 @@ public:
   /**
    * @brief Interface ImageEventHandler's main function
    *
-   * @param image SDK provied Image object and will be released by SDK
-   * @remark image is reset after this call by SDK
+   * @param image SDK provied Image object and will be released by SDK after the event
+   *  (it is a blocking camera buffer)
+   * @remark image is reset after this call by SDK, so don't hold on it
+   * @remark It is the callback acquiredImageCallback_ responsibility
    */
   void OnImageEvent(Spinnaker::ImagePtr image) override
   {
@@ -132,27 +135,38 @@ public:
         acquiredImage.stride_ = image->GetStride();
         acquiredImage.bits_per_pixel_ = image->GetBitsPerPixel();
         acquiredImage.channels_ = image->GetNumChannels();
+
         switch (image->GetPixelFormat()) {
           case Spinnaker::PixelFormatEnums::PixelFormat_Mono8:
             acquiredImage.pixel_format_ = PIXEL_FORMAT_MONO8;
             break;
 
           case Spinnaker::PixelFormatEnums::PixelFormat_BayerGB8:
+            // PixelFormat_BayerGB8 is a 8-bit green/blue packed pixel format
             acquiredImage.pixel_format_ = PIXEL_FORMAT_GB8;
             break;
 
           case Spinnaker::PixelFormatEnums::PixelFormat_BayerRG8:
+            // PixelFormat_BayerRG8 is a 8-bit red/green packed pixel format
             acquiredImage.pixel_format_ = PIXEL_FORMAT_RG8;
             break;
 
+          case Spinnaker::PixelFormatEnums::PixelFormat_BGR8:
+            acquiredImage.pixel_format_ = PIXEL_FORMAT_BGR8;
+            break;
+
           default:
+            // Convert other format to one of the above, for example:
+            // ImagePtr converted = image->Convert(PixelFormat_RGB8)
             acquiredImage.pixel_format_ = PIXEL_FORMAT_INVALID;
+            std::cerr << "Unsupported pixel format: " << image->GetPixelFormatName() << std::endl;
             break;
         }
-        acquiredImage.data_ = image->GetData();
+        acquiredImage.data_ =
+          (acquiredImage.pixel_format_ != PIXEL_FORMAT_INVALID) ? image->GetData() : nullptr;
       } else {
         // AcquiredImage.data_ nullptr is used as an indicator of incomplete issue
-        // acquiredImage.data_ = nullptr;
+        acquiredImage.data_ = nullptr;
       }
       acquiredImageCallback_(&acquiredImage);
     }
@@ -272,12 +286,14 @@ SpinnakerDriverGigE::~SpinnakerDriverGigE()
  *
  * @param camera_index
  * @param camera_type
+ * @param parameters - optional output parameters for CameraParameters
  * @return true when successful
  * @return false when fail
  * @remark camera instance is set when successful
  */
 bool SpinnakerDriverGigE::connect(
-  uint32_t camera_index, SupportedCameraType camera_type)
+  uint32_t camera_index, SupportedCameraType_e camera_type,
+  CameraParameters * parameters)
 {
   if (CAMERA_TYPE_GIGE != camera_type) {
     return false;
@@ -289,7 +305,7 @@ bool SpinnakerDriverGigE::connect(
   Spinnaker::CameraList camera_list = system->GetCameras();
   unsigned int camera_count = camera_list.GetSize();
   if (camera_count <= camera_index) {
-    std::cout << "Camera index: " << camera_index << " is out of range of found camera(s): " <<
+    std::cerr << "Camera index: " << camera_index << " is out of range of found camera(s): " <<
       camera_count << std::endl;
     return false;
   }
@@ -300,7 +316,12 @@ bool SpinnakerDriverGigE::connect(
     // Save the camera instance
     SpinnakerDriverImplementation::getInstance()->setCameraInstance(camera);
 
-    // camera's DeInit will be called from the destructor
+    // Fill current camera prime parameters
+    if (nullptr != parameters) {
+      retrieve_parameters(parameters);
+    }
+    // Camera is setup for further operation from other calls
+    // so camera's DeInit will be called later
   } catch (const Spinnaker::Exception & se) {
     std::cerr << "Failed to initialize camera: " << se.what() << '\n';
     success = false;
@@ -312,6 +333,8 @@ bool SpinnakerDriverGigE::connect(
 
 bool SpinnakerDriverGigE::start(AcquiredImageCallback acquisition_callback, float frame_rate)
 {
+  (void)frame_rate;   // May bring it back for convenience/flexibility
+
   if (Spinnaker::CameraPtr camera =
     SpinnakerDriverImplementation::getInstance()->getCameraInstance())
   {
@@ -355,7 +378,7 @@ bool SpinnakerDriverGigE::start(AcquiredImageCallback acquisition_callback, floa
       // to releasing the system and while the image event handlers are still in scope.
       camera->RegisterEventHandler(*SpinnakerDriverImplementation::getInstance());
     } catch (Spinnaker::Exception & e) {
-      std::cout << "Fail to register acquisition event: " << e.what() << std::endl;
+      std::cerr << "Fail to register acquisition event: " << e.what() << std::endl;
       return false;
     }
 
@@ -374,53 +397,6 @@ bool SpinnakerDriverGigE::start(AcquiredImageCallback acquisition_callback, floa
     } else {
       std::cout << "Unable to disable/enable heartbeat" << std::endl << std::endl;
       ptrDeviceHeartbeat = nullptr;
-    }
-
-    bool use_default_frame_rate = true;
-    if (1.0f != frame_rate) {
-      std::cout << "desired frame rate: " << frame_rate << std::endl;
-      // enable frame rate control
-      Spinnaker::GenApi::CBooleanPtr ptrFrameRateEnable = nodeMap.GetNode
-        // @remark SDK (AcquisitionFrameRateEnable) and
-        // actual code is out of sync (AcquisitionFrameRateEnabled)
-        // ("AcquisitionFrameRateEnable");
-          ("AcquisitionFrameRateEnabled");
-      if (IsAvailable(ptrFrameRateEnable) && IsWritable(ptrFrameRateEnable)) {
-        ptrFrameRateEnable->SetValue(true);
-
-        Spinnaker::GenApi::CFloatPtr ptrFrameRate = nodeMap.GetNode("AcquisitionFrameRate");
-        if (IsAvailable(ptrFrameRate) && IsWritable(ptrFrameRate)) {
-          double max = ptrFrameRate->GetMax();
-          double min = ptrFrameRate->GetMin();
-          double desired = static_cast<double>(frame_rate);
-          if ( (min > desired) || (max < desired) ) {
-            if (min > desired) {
-              std::cout << "minimum frame rate: " << min <<
-                " is used, instead of: " << desired << std::endl;
-              desired = min;
-            } else {
-              std::cout << "maximum frame rate: " << max <<
-                " is used, instead of: " << desired << std::endl;
-              desired = max;
-            }
-          }
-          ptrFrameRate->SetValue(desired);
-          if (desired != ptrFrameRate->GetValue()) {
-            std::cout << "Failed to set frame rate: " << desired <<
-              " instead use : " << ptrFrameRate->GetValue() << std::endl;
-          }
-          std::cout << "Frame rate: " << ptrFrameRate->GetValue() <<
-            " (" << min << "-" << max << ")" << std::endl;
-          use_default_frame_rate = false;
-        } else {
-          std::cout << "AcquisitionFrameRate is not available/writable" << std::endl;
-        }
-      } else {
-        std::cout << "AcquisitionFrameRateEnable is not available/writable" << std::endl;
-      }
-    }
-    if (use_default_frame_rate) {
-      std::cout << "Default frame rate is used" << std::endl;
     }
 
     // Start acquistion
@@ -445,7 +421,7 @@ bool SpinnakerDriverGigE::start(AcquiredImageCallback acquisition_callback, floa
       // @remark: It is important to unregister all image event handlers
       camera->UnregisterEventHandler(*SpinnakerDriverImplementation::getInstance());
     } catch (Spinnaker::Exception & e) {
-      std::cout << "Fail to unregister acquisition event: " << e.what() << std::endl;
+      std::cerr << "Fail to unregister acquisition event: " << e.what() << std::endl;
       // don't exit such that it has chance to finish cleanup
     }
 
@@ -473,7 +449,7 @@ bool SpinnakerDriverGigE::stop()
   return true;
 }
 
-bool SpinnakerDriverGigE::list(SupportedCameraType camera_type)
+bool SpinnakerDriverGigE::list(SupportedCameraType_e camera_type)
 {
   // Support only CAMERA_TYPE_GIGE
   if (CAMERA_TYPE_GIGE != camera_type) {
@@ -580,8 +556,30 @@ bool SpinnakerDriverGigE::list(SupportedCameraType camera_type)
         // This is important information,
         // and the only place to tell if the camera is in proper GigE ethernet adapter
         std::cout << "Host IP: " << get_dotted_address(ptrCurrentIPAddress->GetValue()) <<
-          std::endl << std::endl;
+          std::endl;
       }
+
+      // Temporarily set camera instance, such that retrieve_parameters can use
+      SpinnakerDriverImplementation::getInstance()->setCameraInstance(camera);
+      CameraParameters parameters;
+      if (retrieve_parameters(&parameters, true)) {
+        std::cout << parameters.pixel_format << std::endl;
+        // Skip std::endl
+        std::cout << parameters.video_mode;
+
+        std::cout << "Current, Maximum resolution: " <<
+          parameters.image_dimension.width << "/" <<
+          parameters.image_dimension.height << ", " <<
+          parameters.max_image_dimension.width << "/" <<
+          parameters.max_image_dimension.height << std::endl;
+
+        std::cout << "Current/Max Frame rate: " << parameters.frame_rate << "/" <<
+          parameters.max_frame_rate << std::endl;
+      }
+      std::cout << std::endl;
+      SpinnakerDriverImplementation::getInstance()->setCameraInstance(nullptr);
+
+      // Unmount camera since no other operation is expected
       camera->DeInit();
     } catch (const Spinnaker::Exception & se) {
       std::cerr << se.what() << std::endl;
@@ -591,6 +589,328 @@ bool SpinnakerDriverGigE::list(SupportedCameraType camera_type)
   camera_list.Clear();
 
   return true;
+}
+
+bool SpinnakerDriverGigE::set_videomode(uint32_t camera_index, uint32_t video_mode)
+{
+  Spinnaker::SystemPtr system = SpinnakerDriverImplementation::getInstance()->getSystemInstance();
+  if (nullptr == system) {
+    return false;
+  }
+
+  Spinnaker::CameraList camera_list = system->GetCameras();
+  unsigned int camera_count = camera_list.GetSize();
+  if (camera_count <= camera_index) {
+    std::cerr << "Camera index: " << camera_index << " is out of range of found camera(s): " <<
+      camera_count << std::endl;
+    return false;
+  }
+
+  Spinnaker::CameraPtr camera = camera_list.GetByIndex(camera_index);
+  bool success = true;
+  try {
+    camera->Init();
+
+    Spinnaker::GenApi::INodeMap & nodeMapDevice = camera->GetNodeMap();
+    // Video Mode
+    Spinnaker::GenApi::CEnumerationPtr ptrVideoMode = nodeMapDevice.GetNode("VideoMode");
+    if (IsAvailable(ptrVideoMode) && IsWritable(ptrVideoMode)) {
+      std::cout << "Current " << ptrVideoMode->GetDisplayName() << ": " <<
+        ptrVideoMode->ToString() << " (" << ptrVideoMode->GetIntValue() << ")" << std::endl;
+    } else {
+      std::cerr << "Failed to retrieve Video Mode node in write mode" << std::endl;
+      success = false;
+    }
+
+    if (success) {
+      try {
+        // Exception will throw if video_mode is invalid, or system doesn't take it
+        ptrVideoMode->SetIntValue(video_mode);
+      } catch (const Spinnaker::Exception & se) {
+        std::cerr << "Failed to set Video Mode: " << se.what() << std::endl;
+        success = false;
+      }
+      // Verify if the video mode is successfully set
+      if (ptrVideoMode->GetIntValue() != static_cast<int64_t>(video_mode)) {
+        std::cerr << "Video Mode is not set properly, sure about mode = " << video_mode <<
+          " ? " << std::endl;
+        success = false;
+      }
+
+      // Temporarily set camera instance, such that retrieve_parameters can use
+      SpinnakerDriverImplementation::getInstance()->setCameraInstance(camera);
+      // Used to show camera parameters after video mode is set
+      // When it fails to set, show camera info in details
+      CameraParameters parameters;
+      if (retrieve_parameters(&parameters, !success)) {
+        if (success) {
+          std::cout << parameters.pixel_format << std::endl;
+          std::cout << parameters.video_mode << std::endl;
+
+          std::cout << "Current, Maximum resolution: " <<
+            parameters.image_dimension.width << "/" <<
+            parameters.image_dimension.height << ", " <<
+            parameters.max_image_dimension.width << "/" <<
+            parameters.max_image_dimension.height << std::endl;
+
+          std::cout << "Current/Max Frame rate: " << parameters.frame_rate << "/" <<
+            parameters.max_frame_rate << std::endl;
+        } else {
+          // Only show video mode details which should contain supported modes
+          // Skip std::endl
+          std::cerr << parameters.video_mode;
+        }
+      }
+      SpinnakerDriverImplementation::getInstance()->setCameraInstance(nullptr);
+    }
+    std::cout << std::endl;
+
+    // Unmount camera since no other operation is expected
+    camera->DeInit();
+  } catch (const Spinnaker::Exception & se) {
+    std::cerr << "Failed to initialize camera: " << se.what() << std::endl;
+    success = false;
+  }
+
+  camera_list.Clear();
+  return success;
+}
+
+bool SpinnakerDriverGigE::set_configurable_parameters(
+  uint32_t camera_index, std::vector<ConfigurableParameter> & parameters)
+{
+  Spinnaker::SystemPtr system = SpinnakerDriverImplementation::getInstance()->getSystemInstance();
+  if (nullptr == system) {
+    return false;
+  }
+
+  /* default parameter's index to invalid */
+  int32_t video_mode_index = -1;
+  int32_t frame_rate_index = -1;
+  int32_t width_index = -1;
+  int32_t height_index = -1;
+
+  // Set index to desired parameters
+  for (int i = 0; i < static_cast<int>(parameters.size()); i++) {
+    // ConfigurableParameter * parameter = &parameter[i];
+    switch (parameters[i].type) {
+      case CONFIG_VIDEO_MODE:
+        video_mode_index = i;
+        break;
+
+      case CONFIG_FRAME_RATE:
+        frame_rate_index = i;
+        break;
+
+      case CONFIG_IMAGE_WIDTH:
+        width_index = i;
+        break;
+
+      case CONFIG_IMAGE_HEIGHT:
+        height_index = i;
+        break;
+
+      default:
+        std::cerr << "Unknown configurable parameter type: " << parameters[i].type << std::endl;
+        break;
+    }
+  }
+
+  Spinnaker::CameraList camera_list = system->GetCameras();
+  unsigned int camera_count = camera_list.GetSize();
+  if (camera_count <= camera_index) {
+    std::cerr << "Camera index: " << camera_index << " is out of range of found camera(s): " <<
+      camera_count << std::endl;
+    return false;
+  }
+
+  Spinnaker::CameraPtr camera = camera_list.GetByIndex(camera_index);
+  bool success = true;
+  try {
+    camera->Init();
+
+    Spinnaker::GenApi::INodeMap & nodeMap = camera->GetNodeMap();
+
+    // Configure video mode
+    if (0 <= video_mode_index) {
+      bool good = true;
+      Spinnaker::GenApi::CEnumerationPtr ptrVideoMode = nodeMap.GetNode("VideoMode");
+      if (IsAvailable(ptrVideoMode) && IsWritable(ptrVideoMode)) {
+        std::cout << "Current " << ptrVideoMode->GetDisplayName() << ": " <<
+          ptrVideoMode->ToString() << " (" << ptrVideoMode->GetIntValue() << ")" << std::endl;
+      } else {
+        std::cerr << "Failed to retrieve Video Mode node in write mode" << std::endl;
+        good = success = false;
+      }
+      if (good) {
+        uint32_t video_mode = *(static_cast<uint32_t *>(parameters[video_mode_index].data));
+        try {
+          // Exception will throw if video_mode is invalid, or system doesn't take it
+          ptrVideoMode->SetIntValue(video_mode);
+        } catch (const Spinnaker::Exception & se) {
+          std::cerr << "Failed to set Video Mode: " << se.what() << std::endl;
+          good = success = false;
+        }
+        // Verify if the video mode is successfully set
+        if (good && (ptrVideoMode->GetIntValue() != static_cast<int64_t>(video_mode))) {
+          std::cerr << "Video Mode is not set properly, sure about mode = " << video_mode <<
+            " ? " << std::endl;
+          good = success = false;
+        }
+      }
+    }
+
+    // Configure frame rate
+    if (0 <= frame_rate_index) {
+      bool good = true;
+      // enable frame rate control
+      Spinnaker::GenApi::CBooleanPtr ptrFrameRateEnable = nodeMap.GetNode
+        // @remark SDK (AcquisitionFrameRateEnable) and
+        // actual code is out of sync (AcquisitionFrameRateEnabled)
+        // ("AcquisitionFrameRateEnable");
+          ("AcquisitionFrameRateEnabled");
+      if (IsAvailable(ptrFrameRateEnable) && IsWritable(ptrFrameRateEnable)) {
+        ptrFrameRateEnable->SetValue(true);
+
+        Spinnaker::GenApi::CFloatPtr ptrFrameRate = nodeMap.GetNode("AcquisitionFrameRate");
+        if (IsAvailable(ptrFrameRate) && IsWritable(ptrFrameRate)) {
+          float frame_rate = *(static_cast<float *>(parameters[frame_rate_index].data));
+          double max = ptrFrameRate->GetMax();
+          double min = ptrFrameRate->GetMin();
+          double desired = static_cast<double>(frame_rate);
+
+          if ((min > desired) || (max < desired)) {
+            if (min > desired) {
+              std::cout << "Minimum frame rate: " << min <<
+                " is used, instead of: " << desired << std::endl;
+              desired = min;
+            } else {
+              std::cout << "Maximum frame rate: " << max <<
+                " is used, instead of: " << desired << std::endl;
+              desired = max;
+            }
+          }
+          // Perform frame rate set
+          good = true;
+          try {
+            ptrFrameRate->SetValue(desired);
+            if (desired != ptrFrameRate->GetValue()) {
+              std::cerr << "Failed to set frame rate: " << desired <<
+                " instead use : " << ptrFrameRate->GetValue() << std::endl;
+              good = success = false;
+            }
+          } catch (const Spinnaker::Exception & se) {
+            std::cerr << "Failed to set Frame Rate: " << se.what() << std::endl;
+            good = success = false;
+          }
+
+          if (good) {
+            std::cout << "Frame rate is set to: " << ptrFrameRate->GetValue() <<
+              " (min=" << min << ", max=" << max << ")" << std::endl;
+          }
+          // else error message should already be given out
+        } else {
+          std::cerr << "AcquisitionFrameRate is not available/writable" << std::endl;
+          good = success = false;
+        }
+        // Configure is done here, success or not
+      } else {
+        std::cerr << "AcquisitionFrameRateEnable is not available/writable" << std::endl;
+        good = success = false;
+      }
+    }
+
+    // Configure image dimension
+    if ((0 <= width_index) || (0 <= height_index)) {
+      bool good = true;
+      if (0 <= width_index) {
+        success = true;
+        Spinnaker::GenApi::CIntegerPtr ptrWidth = nodeMap.GetNode("Width");
+        if (IsAvailable(ptrWidth) && IsWritable(ptrWidth)) {
+          uint32_t max = static_cast<uint32_t>(ptrWidth->GetMax());
+          uint32_t min = static_cast<uint32_t>(ptrWidth->GetMin());
+          uint32_t width = *(static_cast<uint32_t *>(parameters[width_index].data));
+          if ((min > width) || (max < width)) {
+            if (min > width) {
+              std::cout << "Minimum width " << min <<
+                " is used, instead of: " << width << std::endl;
+              width = min;
+            }
+            if (max < width) {
+              std::cout << "Maximum width " << max <<
+                " is used, instead of: " << width << std::endl;
+              width = max;
+            }
+          }
+          // Perform fwidth set
+          good = true;
+          try {
+            ptrWidth->SetValue(width);
+          } catch (const Spinnaker::Exception & se) {
+            std::cerr << "Failed to set width: " << se.what() << std::endl;
+            good = success = false;
+          }
+          // Verify if the width is successfully set
+          if (good && (ptrWidth->GetValue() != static_cast<int64_t>(width))) {
+            std::cerr << "Width is not set properly, sure about width = " << width <<
+              " ? " << std::endl;
+            good = success = false;
+          }
+        } else {
+          std::cerr << "Width is not available/writable" << std::endl;
+          good = success = false;
+        }
+      }
+
+      if (0 <= height_index) {
+        good = true;
+        Spinnaker::GenApi::CIntegerPtr ptrHeight = nodeMap.GetNode("Height");
+        if (IsAvailable(ptrHeight) && IsWritable(ptrHeight)) {
+          uint32_t max = static_cast<uint32_t>(ptrHeight->GetMax());
+          uint32_t min = static_cast<uint32_t>(ptrHeight->GetMin());
+          uint32_t height = *(static_cast<uint32_t *>(parameters[height_index].data));
+          if ((min > height) || (max < height)) {
+            if (min > height) {
+              std::cout << "Minimum height " << min <<
+                " is used, instead of: " << height << std::endl;
+              height = min;
+            }
+            if (max < height) {
+              std::cout << "Maximum height " << max <<
+                " is used, instead of: " << height << std::endl;
+              height = max;
+            }
+          }
+          // Perform height set
+          good = true;
+          try {
+            ptrHeight->SetValue(height);
+          } catch (const Spinnaker::Exception & se) {
+            std::cerr << "Failed to set height: " << se.what() << std::endl;
+            good = success = false;
+          }
+          // Verify if the height is successfully set
+          if (good && (ptrHeight->GetValue() != static_cast<int64_t>(height))) {
+            std::cerr << "Hidth is not set properly, sure about height = " << height <<
+              " ? " << std::endl;
+            good = success = false;
+          }
+        } else {
+          std::cerr << "Height is not available/writable" << std::endl;
+          good = success = false;
+        }
+      }
+    }
+
+    // Unmount camera since no other operation is expected
+    camera->DeInit();
+  } catch (const Spinnaker::Exception & se) {
+    std::cerr << "Failed to initialize camera: " << se.what() << std::endl;
+    success = false;
+  }
+
+  camera_list.Clear();
+  return success;
 }
 
 void SpinnakerDriverGigE::release()
@@ -604,6 +924,74 @@ void SpinnakerDriverGigE::release()
   }
 }
 
+/** protected */
+bool SpinnakerDriverGigE::retrieve_parameters(CameraParameters * parameters, bool extra_details)
+{
+  bool success = true;
+  Spinnaker::CameraPtr camera = SpinnakerDriverImplementation::getInstance()->getCameraInstance();
+  // Retrieve device nodemap
+  Spinnaker::GenApi::INodeMap & nodeMapDevice = camera->GetNodeMap();
+  // Pixel format
+  Spinnaker::GenApi::CEnumerationPtr ptrPixelFormatMode = nodeMapDevice.GetNode("PixelFormat");
+  if (IsAvailable(ptrPixelFormatMode) && IsReadable(ptrPixelFormatMode)) {
+    parameters->pixel_format = ptrPixelFormatMode->GetDisplayName() + ": " +
+      ptrPixelFormatMode->ToString();
+  } else {
+    success = false;
+  }
+
+  // Video Mode
+  Spinnaker::GenApi::CEnumerationPtr ptrVideoMode = nodeMapDevice.GetNode("VideoMode");
+  if (IsAvailable(ptrVideoMode) && IsReadable(ptrVideoMode)) {
+    parameters->video_mode = ptrVideoMode->GetDisplayName() + ": " + ptrVideoMode->ToString();
+    parameters->video_mode += " (" + std::to_string(ptrVideoMode->GetIntValue()) + ")";
+    if (extra_details) {
+      std::string details("\nSupported Video Mode:\n");
+      // Add supported video modes
+      Spinnaker::GenApi::StringList_t entries;
+      ptrVideoMode->GetSymbolics(entries);
+      for (size_t i = 0; i < entries.size(); i++) {
+        Spinnaker::GenApi::CEnumEntryPtr selectorEntry = ptrVideoMode->GetEntryByName(entries[i]);
+        details += "  " + entries[i] + " (" + selectorEntry->ToString() + ")\n";
+      }
+      parameters->video_mode += details;
+    }
+  } else {
+    success = false;
+  }
+
+  // Max width/height
+  Spinnaker::GenApi::CIntegerPtr ptrWidth = nodeMapDevice.GetNode("Width");
+  if (IsAvailable(ptrWidth) && IsReadable(ptrWidth)) {
+    int64_t width = ptrWidth->GetMax();
+    int64_t height = 0;
+    Spinnaker::GenApi::CIntegerPtr ptrHeight = nodeMapDevice.GetNode("Height");
+    if (IsAvailable(ptrHeight) && IsReadable(ptrHeight)) {
+      height = ptrHeight->GetMax();
+    } else {
+      success = false;
+    }
+    parameters->max_image_dimension.width = width;
+    parameters->max_image_dimension.height = height;
+    parameters->image_dimension.width = ptrWidth->GetValue();
+    parameters->image_dimension.height = ptrHeight->GetValue();
+  } else {
+    success = false;
+  }
+
+  // Max frame rate
+  Spinnaker::GenApi::CFloatPtr ptrFrameRate = nodeMapDevice.GetNode("AcquisitionFrameRate");
+  if (IsAvailable(ptrFrameRate) && IsReadable(ptrFrameRate)) {
+    parameters->frame_rate = static_cast<float>(ptrFrameRate->GetValue());
+    parameters->max_frame_rate = static_cast<float>(ptrFrameRate->GetMax());
+  } else {
+    success = false;
+  }
+
+  return success;
+}
+
+/** protected */
 void SpinnakerDriverGigE::run()
 {
   uint32_t running_count = 0;
