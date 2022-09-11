@@ -779,9 +779,9 @@ int main(int argc, char * argv[])
   static cli_parameters parameters = {
     .ip_address = CLI_DEFAULT_IP_ADDRESS,
     .first_port = CLI_DEFAULT_FIRST_PORT,
-    .camera = CLI_DEFAULT_CAMERA,
     // Don't care about frame rate, it is filled by the system
     .frame_rate = 1.0f,
+    .camera = CLI_DEFAULT_CAMERA,
   };
 
   if (!argument_parse(argc, argv, &parameters)) {
