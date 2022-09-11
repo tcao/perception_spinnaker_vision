@@ -782,6 +782,11 @@ int main(int argc, char * argv[])
     // Don't care about frame rate, it is filled by the system
     .frame_rate = 1.0f,
     .camera = CLI_DEFAULT_CAMERA,
+    // Don't care about image size, it is filled by the system
+    .dimension = {
+      .width = 0,
+      .height = 0,
+    },
   };
 
   if (!argument_parse(argc, argv, &parameters)) {
