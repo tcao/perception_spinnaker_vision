@@ -69,8 +69,7 @@ bool argument_parse(int argc, char * argv[], cli_parameters * parameters, bool &
   bool mode_set = false,
     width_set = false,
     height_set = false,
-    frame_rate_set = false,
-    camera_set = false;
+    frame_rate_set = false;
 
   if (1 != argc) {
     // arguments parsing loop
@@ -122,7 +121,7 @@ bool argument_parse(int argc, char * argv[], cli_parameters * parameters, bool &
         try {
           uint32_t which = (uint32_t)std::stoul(*++i);
           parameters->camera = which;
-          camera_set = parsed = true;
+          parsed = true;
         } catch (const std::exception & e) {
           std::cerr << e.what() << std::endl <<
             "Bad camera argument, use default: " << parameters->camera << std::endl;
