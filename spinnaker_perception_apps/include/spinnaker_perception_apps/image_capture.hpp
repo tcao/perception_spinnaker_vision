@@ -19,8 +19,8 @@
 /// @Thanks Maxar. This code is done in Maxar time (ting.cao@maxar.com)
 ///
 
-#ifndef SPINNAKER_DRIVER__APPS__IMAGE_CAPTURE_HPP_
-#define SPINNAKER_DRIVER__APPS__IMAGE_CAPTURE_HPP_
+#ifndef SPINNAKER_PERCEPTION_APPS__IMAGE_CAPTURE_HPP_
+#define SPINNAKER_PERCEPTION_APPS__IMAGE_CAPTURE_HPP_
 // STD headers
 #include <string>
 
@@ -148,4 +148,4 @@ public:
   bool debug_;
 };
 
-#endif  // SPINNAKER_DRIVER__APPS__IMAGE_CAPTURE_HPP_
+#endif  // SPINNAKER_PERCEPTION_APPS__IMAGE_CAPTURE_HPP_

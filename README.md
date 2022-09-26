@@ -39,7 +39,7 @@ Same as the build dependencies, plus the following to play streaming video.
 
 ## Build
 By default, the driver and test apps:  
-`gigev_acquisition` and  
+`gigev_config` and  
 `machine_vision_streaming`  
 will be built. Please follow normal cmake project build process.
 
@@ -62,7 +62,7 @@ If you're lucky, here's one screen shot showing the adapter is configured proper
 ### Running camera configuration and streaming apps
 It may need to run the following apps multiple time in order to connect to the right camera.  
 If there are multiple network adapters from the host, the same GigE camera will show up multiple times. FLIR's GigE camera broadcasts heartbeat packets, camera driver iterates through all active adapters.
-- `gigev_acquisition`  
+- `gigev_config`  
 The app is able to list connected GigE camera(s), and show camera(s)' configurable parameters, and performs image acquisition for 10s.  
     - Run the app without argument or with `--help` to show help
     - Use `-l` to list camera and its configurable parameters  
@@ -75,7 +75,7 @@ The app is able to list connected GigE camera(s), and show camera(s)' configurab
 - `machine_vision_streaming`  
 The app aquires images from camera and sends 2 encoded H.264 streams over UDP to specified host (port 5000 and 5001) with gstreamer.  
 The first stream contains the origin acquired images, the second stream contains converted gray scale images with various computer vision filters applied (inverse, Canny, and Sobel, etc).
-You can use `gigev_acquisition` to change camera settings for different mode, frame rate and image size.  
+You can use `gigev_config` to change camera settings for different mode, frame rate and image size.  
     - Run the app without argumenet or with `--help` to show help
     - Use `-s` to specify host IP address the streamming sends UDP packets to.
     - Use `-c` to specify which camera  

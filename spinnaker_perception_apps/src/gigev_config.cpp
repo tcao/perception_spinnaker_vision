@@ -24,7 +24,7 @@
 #include <vector>
 #include <memory>
 
-#include "image_capture.hpp"
+#include "spinnaker_perception_apps/image_capture.hpp"
 
 void spin(spinnaker_driver::SpinnakerDriverGigE * gigev)
 {

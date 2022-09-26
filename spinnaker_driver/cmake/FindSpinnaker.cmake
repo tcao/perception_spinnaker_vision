@@ -44,3 +44,11 @@ if (SPINNAKER_FOUND)
     set(SPINNAKER_INCLUDE_DIRS "${SPINNAKER_INCLUDE_DIR}")
     set(SPINNAKER_LIBRARIES "${SPINNAKER_LIBRARY}")
 endif()
+
+if(NOT TARGET Spinnaker::Spinnaker)
+  add_library(Spinnaker::Spinnaker UNKNOWN IMPORTED)
+  set_target_properties(Spinnaker::Spinnaker PROPERTIES
+    IMPORTED_LOCATION                 "${SPINNAKER_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES     "${SPINNAKER_INCLUDE_DIRS}"
+    IMPORTED_LINK_INTERFACE_LANGUAGES "CXX")
+endif()

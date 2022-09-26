@@ -24,14 +24,13 @@
 #include <string>
 #include <vector>
 
-#include "machine_vision_streaming.hpp"
-
 // OpenCV headers
 #include "opencv2/opencv.hpp"
 #include "opencv2/imgproc/types_c.h"
 
+#include "spinnaker_perception_apps/machine_vision_streaming.hpp"
 // Local CV algorithms
-#include "./edgedetector.h"
+#include "spinnaker_perception_apps/edgedetector.h"
 
 #pragma mark - Local Macros
 // Stringizing the token

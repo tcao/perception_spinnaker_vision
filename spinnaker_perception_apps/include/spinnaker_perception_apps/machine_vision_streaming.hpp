@@ -19,8 +19,8 @@
 /// @Thanks Maxar. This code is done in Maxar time (ting.cao@maxar.com)
 ///
 
-#ifndef SPINNAKER_DRIVER__APPS__MACHINE_VISION_STREAMING_HPP_
-#define SPINNAKER_DRIVER__APPS__MACHINE_VISION_STREAMING_HPP_
+#ifndef SPINNAKER_PERCEPTION_APPS__MACHINE_VISION_STREAMING_HPP_
+#define SPINNAKER_PERCEPTION_APPS__MACHINE_VISION_STREAMING_HPP_
 
 // c standard headers
 #include <stdint.h>
@@ -194,4 +194,4 @@ protected:
   std::vector<VideoStreamProperty *> properties_;
 };
 
-#endif  // SPINNAKER_DRIVER__APPS__MACHINE_VISION_STREAMING_HPP_
+#endif  // SPINNAKER_PERCEPTION_APPS__MACHINE_VISION_STREAMING_HPP_
