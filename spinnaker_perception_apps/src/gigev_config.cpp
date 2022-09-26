@@ -250,7 +250,7 @@ int main(int argc, char * argv[])
   image_capture capture(
     [](const cv::Mat & input) {
       static uint32_t count = 0;
-      std::string fname = "gigev_acquisition_";
+      std::string fname = "gigev_config_";
       fname += std::to_string(count) + ".png";
       // shrink it to a quarter of the original when its width is beyoound 2000
       if (2000 < input.cols) {
