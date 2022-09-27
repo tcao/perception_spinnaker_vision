@@ -87,6 +87,11 @@ install(TARGETS
   ${GIGEV_CONFIG}
   DESTINATION lib/${PROJECT_NAME}/)
 
+# install app's include so it can be used to subclass
+install(
+    DIRECTORY include
+    DESTINATION ${CMAKE_INSTALL_PREFIX})
+
 if(STREAMING)
   install(TARGETS
     ${MACHINE_VISION_STREAMING}
