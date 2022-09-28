@@ -166,12 +166,13 @@ public:
    * @brief Start camera
    *
    * @param acquisition_callback callback when image event occurs
+   * @param detach True to detach running thread, ie, start returns quickly
    * @param frame_rate desired rate (default to 1.0)
    * @remark if desired frame_rate exceeds allowed rate, it will be adjusted to most reasonable one
    * @return true when start operation is successful
    * @return false when start operation fails
    */
-  virtual bool start(AcquiredImageCallback acquisition_callback, float frame_rate = 1.0f) = 0;
+  virtual bool start(AcquiredImageCallback acquisition_callback, bool detach, float frame_rate = 1.0f) = 0;
 
   /**
    * @brief Stop camera image acquisition
@@ -236,7 +237,8 @@ public:
     uint32_t camera_index = 0,
     SupportedCameraType_e camera_type = CAMERA_TYPE_GIGE,
     CameraParameters * parameters = nullptr) override;
-  bool start(AcquiredImageCallback acquisition_callback, float frame_rate = 1.0f) override;
+  bool start(
+    AcquiredImageCallback acquisition_callback, bool detach, float frame_rate = 1.0f) override;
   bool stop() override;
   bool list(SupportedCameraType_e camera_type = CAMERA_TYPE_GIGE) override;
   bool set_videomode(uint32_t camera_index = 0, uint32_t video_mode = 0) override;
@@ -247,6 +249,11 @@ public:
 
 protected:
   bool retrieve_parameters(CameraParameters * parameters, bool extra_details = false);
+  /**
+   * @brief This internal start specific to GigEV
+   */
+  bool start_internal(AcquiredImageCallback acquisition_callback, float frame_rate);
+
   void run() override;
   uint32_t cameraIndex_;
   AcquiredImageCallback acquisitionCallback_;

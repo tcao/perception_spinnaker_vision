@@ -28,6 +28,7 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <thread>
 
 #include "spinnaker_driver/spinnaker_driver.hpp"
 
@@ -332,7 +333,21 @@ bool SpinnakerDriverGigE::connect(
   return success;
 }
 
-bool SpinnakerDriverGigE::start(AcquiredImageCallback acquisition_callback, float frame_rate)
+bool SpinnakerDriverGigE::start(
+  AcquiredImageCallback acquisition_callback, bool detach, float frame_rate)
+{
+  if (!detach) {
+    return start_internal(acquisition_callback, frame_rate);
+  }
+
+  std::thread(
+    &SpinnakerDriverGigE::start_internal, this, acquisition_callback, frame_rate).detach();
+  return true;
+}
+
+/** Protected */
+bool SpinnakerDriverGigE::start_internal(
+  AcquiredImageCallback acquisition_callback, float frame_rate)
 {
   (void)frame_rate;   // May bring it back for convenience/flexibility
 
