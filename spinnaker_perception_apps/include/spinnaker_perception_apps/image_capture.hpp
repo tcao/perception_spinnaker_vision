@@ -31,6 +31,8 @@
 // Spinnaker driver header
 #include "spinnaker_driver/spinnaker_driver.hpp"
 
+namespace spinnaker_perception_apps
+{
 struct image_capture
 {
 public:
@@ -147,5 +149,5 @@ public:
 
   bool debug_;
 };
-
+}  // namespace spinnaker_perception_apps
 #endif  // SPINNAKER_PERCEPTION_APPS__IMAGE_CAPTURE_HPP_

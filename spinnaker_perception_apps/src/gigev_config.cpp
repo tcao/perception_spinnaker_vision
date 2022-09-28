@@ -26,6 +26,11 @@
 
 #include "spinnaker_perception_apps/image_capture.hpp"
 
+namespace
+{
+using spinnaker_perception_apps::image_capture;
+}  // anonymous namespace
+
 void spin(spinnaker_driver::SpinnakerDriverGigE * gigev)
 {
   using namespace std::chrono_literals;
