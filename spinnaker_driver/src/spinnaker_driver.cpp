@@ -36,7 +36,8 @@ namespace spinnaker_driver
 {
 #pragma region namespace spinnaker_driver utility
 using namespace std::chrono_literals;
-static const std::chrono::milliseconds kRunningThreadWakeup(100);
+// TODO(tcao): This affects the streaming frame rate which can't be fast than kRunningThreadWakeup
+static const std::chrono::milliseconds kRunningThreadWakeup(10);
 
 /**
  * @brief Get the dotted address in text form from an integer
