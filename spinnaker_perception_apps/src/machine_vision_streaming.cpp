@@ -484,7 +484,7 @@ int main(int argc, char * argv[])
     // Start image acquisition, no return till forced to
     bool thread_status = gigev_driver.start(acquisition_callback, parameters.frame_rate);
     if (thread_status) {
-      std::cout << "Acquistion is successfully terminated" << std::endl;
+      std::cout << "Acquistion is successfully started" << std::endl;
     } else {
       std::cout << "Failed to start camera: " << parameters.camera << std::endl;
     }
