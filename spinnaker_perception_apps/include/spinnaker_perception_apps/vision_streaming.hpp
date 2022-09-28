@@ -101,8 +101,18 @@ public:
      * @brief appsrc mainly used to push streaming buffer
      */
     GstElement * appsrc;
+
     // TODO(tcao): Use std::function such that this accessible
-    void ( * appsrc_logic)(const cv::Mat & input, cv::Mat & output);
+    /**
+     * @brief Callback for acquired images
+     *
+     * @param input - Input image. Don't hold it per Spinnaker
+     * @param output - Output image
+     *
+     * @return true - Don't ignore output to do further processing
+     * @return false - Ignore output
+     */
+    bool ( * appsrc_logic)(const cv::Mat & input, cv::Mat & output);
   };
 
   /**
@@ -234,8 +244,11 @@ protected:
         // push retrieved data to each stream
         uint32_t index = 0;
         for (VisionStreamProperty * property : this->properties_) {
-          property->appsrc_logic(image_, converted_buffer[index]);
-          push(converted_buffer[index], property);
+          if (property->appsrc_logic(image_, converted_buffer[index])) {
+            // @remark - This (skipping the frame when appsrc_logic returns false)
+            // will screw up streaming timing
+            push(converted_buffer[index], property);
+          }
           index++;
         }
       } catch (std::exception & e) {

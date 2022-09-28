@@ -270,7 +270,7 @@ void setup_pipelines(std::shared_ptr<VisionStream> vision_stream, cli_parameters
       .timestamp = 0,
       .loop = nullptr,
       .appsrc = nullptr,
-      .appsrc_logic = [](const cv::Mat & input, cv::Mat & output) {
+      .appsrc_logic = [](const cv::Mat & input, cv::Mat & output) -> bool {
           // Not doing anything, just pass along w/o affecting passing input
           static uint32_t count = 0;
           if (WHEN_TO_SAVE_DEBUG_IMAGE == count) {
@@ -279,6 +279,7 @@ void setup_pipelines(std::shared_ptr<VisionStream> vision_stream, cli_parameters
           }
           count++;
           output = input.clone();
+          return true;
         },
     },
     // Computer vision processing pipeline, assuming it is in GRAY (single channel) format
@@ -294,7 +295,7 @@ void setup_pipelines(std::shared_ptr<VisionStream> vision_stream, cli_parameters
       .timestamp = 0,
       .loop = nullptr,
       .appsrc = nullptr,
-      .appsrc_logic = [](const cv::Mat & input, cv::Mat & output) {
+      .appsrc_logic = [](const cv::Mat & input, cv::Mat & output) -> bool {
           // Convert to GRAY if it is not already in the format
           static uint32_t count = 0;
           static uint32_t filter_iteration = 0;
@@ -309,12 +310,12 @@ void setup_pipelines(std::shared_ptr<VisionStream> vision_stream, cli_parameters
             filter_iteration = 0;
           }
           if ((1 == input.channels()) && (CV_8U == input.type())) {
-            // Clone it since it is already in the proper format
             if (WHEN_TO_SAVE_DEBUG_IMAGE == count) {
               std::cout << "GRAY8_0 - saving image in the format of: " << input.type() << std::endl;
               cv::imwrite("mv_gry.png", input);
             }
             count++;
+            // No need to clone input, since it is already in proper format
             filter_operation->filter(input, filter_operation->operation, output);
           } else {
             cv::cvtColor(input, output, cv::COLOR_RGB2GRAY);
@@ -336,6 +337,7 @@ void setup_pipelines(std::shared_ptr<VisionStream> vision_stream, cli_parameters
             }
             count++;
           }
+          return true;
         },
     },
   };
