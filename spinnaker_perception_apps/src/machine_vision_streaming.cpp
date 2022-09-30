@@ -411,7 +411,7 @@ bool argument_parse(int argc, char * argv[], cli_parameters * parameters)
   }
 
   if (help) {
-    std::cout << argv[0] << " [-c <camera>] [-h <host IP>] [--help]" << std::endl;
+    std::cout << argv[0] << " [-c <camera>] [-s <host IP>] [--help]" << std::endl;
     std::cout << "-c (optional, default=" << parameters->camera <<
       ") to specify which camera to use" << std::endl;
     std::cout << "   Optional when used with other options" << std::endl;
