@@ -38,9 +38,11 @@ namespace spinnaker_driver
 enum SupportedPixelFormat_e
 {
   PIXEL_FORMAT_MONO8,   // PixelFormat_Mono8 (GS3-PGE-60S6M) -> no need to convert
-  PIXEL_FORMAT_GB8,     // PixelFormat_BayerGB8 -> (not tested) cvtColor CV_BayerGR2BGR
-  PIXEL_FORMAT_RG8,     // PixelFormat_BayerRG8 (tested BFLY-PGE-50S5C)-> cvtColor CV_BayerBG2BGR
-                        // https://www.baumer.com/be/en/service-support/technical-information-industrial-cameras/baumer-gapi-and-opencv/a/baumer-gapi-and-opencv
+  PIXEL_FORMAT_GB8,     // PixelFormat_BayerGB8
+                        //  (5, tested BFLY-PGE-50S5C in mode 0) -> cvtColor CV_BayerGR2BGR
+  PIXEL_FORMAT_RG8,     // PixelFormat_BayerRG8
+                        //  (4, tested BFLY-PGE-50S5C in mode 1/2)-> cvtColor CV_BayerBG2BGR
+                        //  https://www.baumer.com/be/en/service-support/technical-information-industrial-cameras/baumer-gapi-and-opencv/a/baumer-gapi-and-opencv
                         // According AcquisionOpenCV.cpp:
                         // 1) pResultImage->Convert(PixelFormat_RGB8, HQ_LINEAR)
                         // 2) pass PixelFormat_BayerRG8 to OpenCV, then cvtColor COLOR_BayerRG2RGB
@@ -98,6 +100,29 @@ struct AcquiredImage
   size_t channels_;
   // SupportedPixelFormat pixel_format_;
   uint16_t pixel_format_;
+  /**
+   * @brief Pixel data type
+   *
+   * @remark The following is supported one from SDK's SpinnakerDefs.h
+   *
+   * enum PixelFormatIntType
+   * {
+   *     IntType_UINT8,   // Unsigned 8-bit integer.
+   *     IntType_INT8,    // Signed 8-bit integer.
+   *     IntType_UINT10,  // Unsigned 10-bit integer.
+   *     IntType_UINT10p, // LSB packed unsigned 10-bit integer.
+   *     IntType_UINT10P, // MSB packed unsigned 10-bit integer.
+   *     IntType_UINT12,  // Unsigned 12-bit integer (unpacked).
+   *     IntType_UINT12p, // LSB packed unsigned 12-bit integer.
+   *     IntType_UINT12P, // MSB packed unsigned 12-bit integer.
+   *     IntType_UINT14,  // Unsigned 14-bit integer (unpacked).
+   *     IntType_UINT16,  // Unsigned 16-bit integer (unpacked).
+   *     IntType_INT16,   // Signed 16-bit integer (unpacked).
+   *     IntType_FLOAT32, // 32-bit float.
+   *     IntType_UNKNOWN
+   * };
+   */
+  uint16_t pixel_type_;
   /**
    * @brief image data buffer
    * @remark if null, it indicates data is not complete
@@ -172,7 +197,8 @@ public:
    * @return true when start operation is successful
    * @return false when start operation fails
    */
-  virtual bool start(AcquiredImageCallback acquisition_callback, bool detach, float frame_rate = 1.0f) = 0;
+  virtual bool start(
+    AcquiredImageCallback acquisition_callback, bool detach, float frame_rate = 1.0f) = 0;
 
   /**
    * @brief Stop camera image acquisition

@@ -73,6 +73,7 @@ public:
       // raw data is organized in single channel, conversion from CV_8UC1 to CV_8UC3 is needed
       cv::Mat frame = cv::Mat(
         static_cast<int>(img->height_), static_cast<int>(img->width_),
+        // Spinnaker GigEV camera Bayer based image has only one channel
         (3 == img->channels_) ? CV_8UC3 : CV_8UC1,
         // @remark No data is allocated, it just points to provided data
         const_cast<void *>(reinterpret_cast<const void *>(img->data_)),

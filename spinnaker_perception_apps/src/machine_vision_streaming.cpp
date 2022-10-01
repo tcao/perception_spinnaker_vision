@@ -273,12 +273,18 @@ void setup_pipelines(std::shared_ptr<VisionStream> vision_stream, cli_parameters
       .appsrc_logic = [](const cv::Mat & input, cv::Mat & output) -> bool {
           // Not doing anything, just pass along w/o affecting passing input
           static uint32_t count = 0;
+          if ((1 == input.channels()) && (CV_8U == input.type())) {
+            // Streaming expects color image but this is a gray one, so convert
+            cv::cvtColor(input, output, CV_GRAY2BGR);
+          } else {
+            // Clone to output w/o touching input
+            output = input.clone();
+          }
           if (WHEN_TO_SAVE_DEBUG_IMAGE == count) {
             std::cout << "BGR - saving image in the format of: " << input.type() << std::endl;
-            cv::imwrite("mv_bgr.png", input);
+            cv::imwrite("mv_bgr.png", output);
           }
           count++;
-          output = input.clone();
           return true;
         },
     },

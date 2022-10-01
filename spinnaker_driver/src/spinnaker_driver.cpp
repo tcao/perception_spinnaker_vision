@@ -136,6 +136,7 @@ public:
         acquiredImage.y_padding_ = image->GetYPadding();
         acquiredImage.stride_ = image->GetStride();
         acquiredImage.bits_per_pixel_ = image->GetBitsPerPixel();
+        // Bayer color image has only one channel
         acquiredImage.channels_ = image->GetNumChannels();
 
         switch (image->GetPixelFormat()) {
@@ -948,6 +949,12 @@ bool SpinnakerDriverGigE::retrieve_parameters(CameraParameters * parameters, boo
   // Retrieve device nodemap
   Spinnaker::GenApi::INodeMap & nodeMapDevice = camera->GetNodeMap();
   // Pixel format
+  // @remark Weird SDK behavior - If this is called before image acquisition
+  // (not this app, but camera sessions, like this app runs multiple time w/o camera reset),
+  // it never acquires images in PixelFormat_BayerGB8, but only in PixelFormat_BayerRG8.
+  // If this call is not made, it is possible to acquire image in PixelFormat_BayerGB8,
+  // but color conversioin doesn't work: cvtColor with CV_BayerGR2BGR
+  // (Note camera BayerGB8 is the same as OpenCV BayerGR)
   Spinnaker::GenApi::CEnumerationPtr ptrPixelFormatMode = nodeMapDevice.GetNode("PixelFormat");
   if (IsAvailable(ptrPixelFormatMode) && IsReadable(ptrPixelFormatMode)) {
     parameters->pixel_format = ptrPixelFormatMode->GetDisplayName() + ": " +
