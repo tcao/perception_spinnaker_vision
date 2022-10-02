@@ -483,8 +483,8 @@ int main(int argc, char * argv[])
     std::thread spin_thread([&gigev_driver, vision_stream]() {
         // Run the streaming for this amount of time in seconds
         std::this_thread::sleep_for(std::chrono::seconds(120));
-        gigev_driver.stop();
         vision_stream->stop();
+        gigev_driver.stop();
       });
 
     // Start image acquisition, no return till forced to

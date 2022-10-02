@@ -120,7 +120,9 @@ public:
    */
   VisionStream()
   : image_acquisition_exit_(false)
-  {}
+  {
+    // image_capture is instantiated with default parameters
+  }
 
   /**
    * @brief Destroy the Video Stream object
@@ -143,6 +145,9 @@ public:
     g_message("VisionStream::receive(%s)", start ? "true" : "false");
     if (!start) {
       image_acquisition_exit_ = true;
+
+      // Abort lock to force exiting from detached thread receiving
+      image_release();
       return;
     }
 
@@ -224,6 +229,12 @@ protected:
       // The loop's running rate is decided by whoever release frame_ready_condition_
       frame_ready_condition_.wait(guard);
 
+      // image_acquisition_exit_ could be changed after the above wait,
+      // which could be forced to abort, so let's check image_acquisition_exit_ again
+      if (image_acquisition_exit_) {
+        break;
+      }
+
       // Useful debugging info, in particular timestamp showing frame rate
       g_message("receiving: %u", count);
 
@@ -256,6 +267,7 @@ protected:
       }
       count++;
     }
+    g_message("VisionStream::receiving exits");
   }
 
   /**
