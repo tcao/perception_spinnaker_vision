@@ -272,6 +272,10 @@ public:
     uint32_t camera_index, std::vector<ConfigurableParameter> & parameters) override;
 
   void release() override;
+  bool is_deinit_done()
+  {
+    return deinit_done_;
+  }
 
 protected:
   bool retrieve_parameters(CameraParameters * parameters, bool extra_details = false);
@@ -287,7 +291,16 @@ protected:
    * @brief The thread runs in 10Hz or 100ms frequency
    */
   std::shared_ptr<std::thread> runningThread_;
+  /**
+   * @brief The flag used to break from main running thread
+   */
   volatile bool running_;
+  /**
+   * @brief The flag used to sync deinit sequence
+   * @remark It is used for apps which runs start in a detached thread,
+   * for example, a ROS node
+   */
+  bool deinit_done_;
 };
 
 }  // namespace spinnaker_driver

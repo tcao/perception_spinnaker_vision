@@ -258,7 +258,8 @@ SpinnakerDriverGigE::SpinnakerDriverGigE()
 : cameraIndex_(0),
   acquisitionCallback_(nullptr),
   runningThread_(nullptr),
-  running_(false)
+  running_(false),
+  deinit_done_(true)
 {}
 
 SpinnakerDriverGigE::~SpinnakerDriverGigE()
@@ -316,6 +317,11 @@ bool SpinnakerDriverGigE::connect(
   bool success = true;
   try {
     camera->Init();
+
+    // Flag deinit is not done,
+    // since camera is inited, we need a synchronized deinit
+    deinit_done_ = false;
+
     // Save the camera instance
     SpinnakerDriverImplementation::getInstance()->setCameraInstance(camera);
 
@@ -450,6 +456,10 @@ bool SpinnakerDriverGigE::start_internal(
 
     std::cout << "camera->DeInit" << std::endl;
     camera->DeInit();
+
+    // This code may run in a detached thread, it is important to let app knows that,
+    // camera deinit sequence is done, so app can stop waiting to release camera resources.
+    deinit_done_ = true;
 
     std::cout << "start operation exits successfully" << std::endl;
   } else {
