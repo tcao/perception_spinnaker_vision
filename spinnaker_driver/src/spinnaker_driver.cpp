@@ -11,6 +11,7 @@
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
+// limitations under the License.
 
 ///
 /// FLIR camera driver based on Spinnaker SDK
@@ -36,9 +37,6 @@
 namespace spinnaker_driver
 {
 #pragma region namespace spinnaker_driver utility
-using namespace std::chrono_literals;
-// TODO(tcao): This affects the streaming frame rate which can't be fast than kRunningThreadWakeup
-static const std::chrono::milliseconds kRunningThreadWakeup(10);
 
 /**
  * @brief Get the dotted address in text form from an integer
@@ -455,10 +453,12 @@ bool SpinnakerDriverGigE::start_internal(
     }
 
     std::cout << "camera->DeInit" << std::endl;
+    // The following operation may take long time to finish
     camera->DeInit();
 
     // This code may run in a detached thread, it is important to let app knows that,
-    // camera deinit sequence is done, so app can stop waiting to release camera resources.
+    // camera deinit sequence is done by calling is_deinit_done,
+    // such that app resumes after waiting for camera resources release.
     deinit_done_ = true;
 
     std::cout << "start operation exits successfully" << std::endl;

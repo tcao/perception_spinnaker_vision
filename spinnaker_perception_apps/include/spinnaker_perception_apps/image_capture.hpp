@@ -11,6 +11,7 @@
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
+// limitations under the License.
 
 ///
 /// GigEV camera image capture callback wrapper
@@ -37,14 +38,16 @@ struct image_capture
 {
 public:
   image_capture(
-    void(*handler)(const cv::Mat & input) = nullptr,
+    void(*handler)(cv::Mat & input) = nullptr,
     uint64_t timestamp = 0, bool debug = false)
   : image_handler(handler),
     timestamp_(timestamp),
     debug_(debug)
   {}
 
-  void acquired(const spinnaker_driver::AcquiredImage * img)
+  virtual ~image_capture() {}
+
+  virtual void acquired(const spinnaker_driver::AcquiredImage * img)
   {
     static uint32_t count = 0;
     std::chrono::system_clock::time_point current_timestamp{
@@ -69,11 +72,12 @@ public:
         std::cout << std::dec << std::endl << std::flush;
       }
 
-      // When Bayer pattern is used (as CCD/CMOS usually does),
-      // raw data is organized in single channel, conversion from CV_8UC1 to CV_8UC3 is needed
+      // When Bayer pattern is used (as CCD/CMOS sensor usually do),
+      // raw data is organized in single channel,
+      // such as Spinnaker GigEV camera Bayer based image,
+      // conversion from CV_8UC1 to CV_8UC3 is needed
       cv::Mat frame = cv::Mat(
         static_cast<int>(img->height_), static_cast<int>(img->width_),
-        // Spinnaker GigEV camera Bayer based image has only one channel
         (3 == img->channels_) ? CV_8UC3 : CV_8UC1,
         // @remark No data is allocated, it just points to provided data
         const_cast<void *>(reinterpret_cast<const void *>(img->data_)),
@@ -130,7 +134,7 @@ public:
   /**
    * @brief A function pointer means to hookup application to process acquired image
    */
-  void ( * image_handler)(const cv::Mat & input);
+  void ( * image_handler)(cv::Mat & input);
 
   /**
    * @brief To release acquired image

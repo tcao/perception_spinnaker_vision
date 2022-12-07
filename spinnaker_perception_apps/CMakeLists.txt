@@ -14,7 +14,11 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-find_package(ament_cmake_auto REQUIRED)
+find_package(spinnaker_driver REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(Threads REQUIRED)
+
+#find_package(ament_cmake_auto REQUIRED)
 
 # the spinnaker SDK does not provide a cmake file
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -34,26 +38,36 @@ find_package(GStreamer 1.0 REQUIRED COMPONENTS
 set(PERCEPTION_APP_DEPENDENCIES "${PERCEPTION_APP_DEPENDENCIES}" "GStreamer")
 endif()
 
-foreach(pkg ${PERCEPTION_APP_DEPENDENCIES})
-  find_package(${pkg} REQUIRED)
-endforeach()
+#foreach(pkg ${PERCEPTION_APP_DEPENDENCIES})
+#  find_package(${pkg} REQUIRED)
+#endforeach()
 
-ament_auto_find_build_dependencies(REQUIRED ${PERCEPTION_APP_DEPENDENCIES})
+#ament_auto_find_build_dependencies(REQUIRED ${PERCEPTION_APP_DEPENDENCIES})
+
+#include_directories(include)
+include_directories(${spinnaker_driver_INCLUDE_DIRS}
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
 
 set(GIGEV_CONFIG "gigev_config")
-ament_auto_add_executable(${GIGEV_CONFIG}
+add_executable(${GIGEV_CONFIG}
   src/${GIGEV_CONFIG}.cpp
 )
+target_include_directories(${GIGEV_CONFIG} PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${OpenCV_DIRS})
 # ament_auto_find_build_dependencies/ament_auto_add_executable having trouble with pthread
 # Have to manually help it with link
 target_link_libraries(${GIGEV_CONFIG}
-  ${SPINNAKER_DRIVER_LIBRARY}
+  #${SPINNAKER_DRIVER_LIBRARY}
+  ${spinnaker_driver_TARGETS}
   Threads::Threads
   ${OpenCV_LIBS})
 
 if(STREAMING)
 set(MACHINE_VISION_STREAMING "machine_vision_streaming")
-ament_auto_add_executable(${MACHINE_VISION_STREAMING}
+add_executable(${MACHINE_VISION_STREAMING}
   src/${MACHINE_VISION_STREAMING}.cpp
 )
 # ament_auto_find_build_dependencies/ament_auto_add_executable having trouble with GStreamer
@@ -61,7 +75,6 @@ ament_auto_add_executable(${MACHINE_VISION_STREAMING}
 target_include_directories(${MACHINE_VISION_STREAMING} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
-  ${SPINNAKER_DRIVER_INCLUDE_DIR}
   ${GSTREAMER_INCLUDE_DIRS}
   ${GSTREAMER_APP_INCLUDE_DIRS}
   ${OpenCV_DIRS})
@@ -72,7 +85,7 @@ endif()
 # ament_auto_find_build_dependencies/ament_auto_add_executable having trouble with GStreamer
 # Have to manually help it with link
 target_link_libraries(${MACHINE_VISION_STREAMING}
-  ${SPINNAKER_DRIVER_LIBRARY}
+  ${spinnaker_driver_TARGETS}
   Threads::Threads
   ${GSTREAMER_LIBRARIES}
   ${GSTREAMER_APP_LIBRARIES}
@@ -97,5 +110,8 @@ if(STREAMING)
     ${MACHINE_VISION_STREAMING}
     DESTINATION lib/${PROJECT_NAME}/)
 endif()
+
+# Export include to enable subclass
+ament_export_include_directories(include)
 
 ament_package()

@@ -11,6 +11,7 @@
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
+// limitations under the License.
 
 ///
 /// FLIR camera driver based on Spinnaker SDK
@@ -28,9 +29,13 @@
 #include <thread>
 #include <vector>
 #include <string>
+#include <chrono>
 
 namespace spinnaker_driver
 {
+// TODO(tcao): This affects the streaming frame rate which can't be fast than kRunningThreadWakeup
+static const std::chrono::milliseconds kRunningThreadWakeup(10);
+
 // @remark OpenCV default Pixel format is BGR8
 // @remark Check the following link at Bayer patterns' corresponding OpenCV transform
 // @remark https://www.baumer.com/be/en/service-support/technical-information-industrial-cameras/baumer-gapi-and-opencv/a/baumer-gapi-and-opencv
@@ -38,6 +43,7 @@ namespace spinnaker_driver
 enum SupportedPixelFormat_e
 {
   PIXEL_FORMAT_MONO8,   // PixelFormat_Mono8 (GS3-PGE-60S6M) -> no need to convert
+                        //  (it seems more work needs be done for GS3-PGE-60S6M in Mode 7/Mono8)
   PIXEL_FORMAT_GB8,     // PixelFormat_BayerGB8
                         //  (5, tested BFLY-PGE-50S5C in mode 0) -> cvtColor CV_BayerGR2BGR
   PIXEL_FORMAT_RG8,     // PixelFormat_BayerRG8

@@ -11,6 +11,7 @@
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
+// limitations under the License.
 
 ///
 /// GigEV machine vision streaming application based on spinnaker_driver
@@ -459,7 +460,7 @@ int main(int argc, char * argv[])
   // Instantiate GigEV driver
   spinnaker_driver::CameraParameters camera_parameters;
   spinnaker_driver::SpinnakerDriverGigE gigev_driver;
-  std::cout << "Connecting to camera " << parameters.camera << std::endl;
+  std::cout << "Connecting to camera: " << parameters.camera << std::endl;
   // Connecting GigEV camera, with camera parameters requested
   if (gigev_driver.connect(
       parameters.camera,
