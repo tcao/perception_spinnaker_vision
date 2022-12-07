@@ -23,11 +23,14 @@ Thanks Maxar for donating hours and allowing me, as a Maxar Space Robotics Softw
 - If you don't need streaming, make the following change at CMakeLists.txt to not use it:  
 `set(STREAMING FALSE)`
 
-#### (Optional) ament-cmake
+#### ament-cmake
 The code is design to be able to run in ROS.
-If you don't have ament-cmake, and you can either 
+If you don't have ament-cmake installed, and you can either 
 - Remove the ament-cmake reference from CMakeLists.txt, or
 - Install ament-cmake package
+
+#### ROS 2
+spinnaker_ros2 package should be able to build with ROS2 Foxy or above.
 
 ### Running Dependencies
 Same as the build dependencies, plus the following to play streaming video.
@@ -38,10 +41,16 @@ Same as the build dependencies, plus the following to play streaming video.
 `brew install ffmpeg`
 
 ## Build
-By default, the driver and test apps:  
-`gigev_config` and  
-`machine_vision_streaming`  
-will be built. Please follow normal cmake project build process.
+By default, 
+- driver 
+- test apps:  
+`gigev_config` (to list and configure GigEV camera) and  
+`machine_vision_streaming`  (gstreamer vision streaming)
+- ROS2 package 
+`spinnaker_ros2` (OpenCV/ROS2 sensor message bridge)   
+will be built. Please follow normal cmake project build process.  
+
+If there is "exported target names" related error, your ament_cmake_export_targets package may have a bug in it, and fix it per [this solution](https://github.com/ament/ament_cmake/commit/11c44dbd646846a2e8ca912155f0704e9b0c3c57)
 
 ## GigE Camera Hardware Setup
 - Networking  
@@ -108,6 +117,16 @@ But I'm not able to view with UDP and H.264 codec
 `video/mp4`  
 which is what the streaming app uses. I will update here once I get HTML5 working
 
+### Publish image acquisition to ROS2 sensor message
+- spinnaker_ros2  
+Example:  
+`ros2 run spinnaker_ros2 spinnaker_ros2 -c 0 --ros-args -r /spinnaker_ros2/image:=image`  
+Here's GigEV camera 0 is used, and the package's publishing topic is remapped to regular topic:  
+`image` of type `sensor_msgs::msg::Image`.
+- Image viewer 
+You can run any image viewer to show acquired images. One **important** note is, the viewer should use the compatible QoS profile as `spinnaker_ros2` which is:  
+`rclcpp::SensorDataQoS()`.  
+Please see the code for details.
 
 ## Limitation
 1. Currently, only Point Grey's GigE/PoE camera is supported.
@@ -122,4 +141,4 @@ which is what the streaming app uses. I will update here once I get HTML5 workin
 - macOS 10.15.7 Catalina
 
 ## To do
-Will add ROS2 (Foxy and Humble) perception support
+There are some available GigEV camera video modes are to be supported.

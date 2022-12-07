@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.5)
 project(spinnaker_driver VERSION 1.0.0 LANGUAGES CXX)
 
-# Default to C++14
+# Default to C++20
 if(NOT CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 20)
 endif()
@@ -39,16 +39,22 @@ target_link_libraries(${PROJECT_NAME} PRIVATE Spinnaker::Spinnaker)
 install(
   TARGETS ${PROJECT_NAME}
   EXPORT export_${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
 )
 
 install(
-  DIRECTORY include
-  DESTINATION ${CMAKE_INSTALL_PREFIX}
+  #DIRECTORY include
+  #DESTINATION ${CMAKE_INSTALL_PREFIX}
+  DIRECTORY include/${PROJECT_NAME}/
+  DESTINATION include/${PROJECT_NAME}
 )
 
-# Important to export Spinnaker symbols such that dependent binaries no need to link it
+# Important to export Spinnaker symbols such that dependent packages have no need to explicitly link it
 ament_export_targets(export_${PROJECT_NAME})
+# Export include
+ament_export_include_directories(include)
+ament_export_libraries(${PROJECT_NAME})
 
 ament_package()

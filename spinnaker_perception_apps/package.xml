@@ -5,18 +5,20 @@
   <version>1.0.0</version>
   <description>This is testing apps package for spinnaker_driver</description>
   <maintainer email="ting.cao@maxar.com">ting.cao</maintainer>
-  <license>Apache</license>
+  <license>Apache-2</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>ament_cmake_auto</buildtool_depend>
 
   <depend>spinnaker_driver</depend>
-  <depend>OpenCV</depend>
+  <depend>libopencv-dev</depend>
+  <!--depend>OpenCV</depend-->
   <depend>GStreamer</depend>
   <depend>Threads</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
+  <test_depend>ament_cmake_clang_format</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>

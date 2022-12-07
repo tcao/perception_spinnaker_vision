@@ -11,6 +11,7 @@
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
+// limitations under the License.
 
 ///
 /// GigEV camera acquisition application base on FLIR driver
@@ -172,7 +173,7 @@ bool argument_parse(int argc, char * argv[], cli_parameters * parameters, bool &
 
   if (help) {
     std::cout << argv[0] << " [-l (list cameras)][-c <camera>][-f <frame rate>]" <<
-      "[-m <video mode>][-h <image height>][-w <image width>][-help]" << std::endl;
+      "[-m <video mode>][-h <image height>][-w <image width>][--help]" << std::endl;
     std::cout << "-l (optional) to list cameras and their important properties" << std::endl <<
       "   Some properties could be used other applications, say -m, -f, -h, -w for video mode" <<
       std::endl << "   It may needs to run multiple times to list all cameras" <<
@@ -253,7 +254,7 @@ int main(int argc, char * argv[])
   }
 
   image_capture capture(
-    [](const cv::Mat & input) {
+    [](cv::Mat & input) {
       static uint32_t count = 0;
       std::string fname = "gigev_config_";
       fname += std::to_string(count) + ".png";
@@ -327,7 +328,7 @@ int main(int argc, char * argv[])
 
   // Normal acquisition operation
   if (continue_status) {
-    std::cout << "Connecting to camera " << parameters.camera << std::endl;
+    std::cout << "Connecting to camera: " << parameters.camera << std::endl;
     if (gigev_driver.connect(parameters.camera)) {
       // start a process running for 10s
       std::shared_ptr<std::thread> spin_thread = std::make_shared<std::thread>(

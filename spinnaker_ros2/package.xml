@@ -1,16 +1,24 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>spinnaker_driver</name>
+  <name>spinnaker_ros2</name>
   <version>1.0.0</version>
-  <description>This is GigEV driver implementation based on Spinnaker SDK</description>
-  <maintainer email="ting.cao@maxar.com">ting.cao</maintainer>
+  <description>This is ROS2 image pipeline for GigEV camera based on Spinnaker SDK</description>
+  <maintainer email="cao_ting@yahoo.com">tcao</maintainer>
   <license>Apache-2</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>ament_cmake_auto</buildtool_depend>
 
-  <depend>Spinnaker</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_components</depend>
+  <depend>image_transport</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>camera_info_manager</depend>
+  <depend>spinnaker_driver</depend>
+  <depend>spinnaker_perception_apps</depend>
+  <depend>libopencv-dev</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
