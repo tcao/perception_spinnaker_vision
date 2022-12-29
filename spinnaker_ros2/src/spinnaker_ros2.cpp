@@ -440,7 +440,7 @@ void SpinnakerRos2::image_process()
       std::lock_guard<std::mutex> lk(critical_section_);
       // Annotation
       static char counter_label[128] = {0};
-      snprintf(counter_label, sizeof(counter_label), "%d", acquired_count_);
+      snprintf(counter_label, sizeof(counter_label), "%d", sequence_id);
       // X/Y, where origin at top left, y+ points down
       cv::Point2d label_position(image_.cols - 150, image_.rows - 30);
       cv::putText(
