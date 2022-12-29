@@ -413,39 +413,40 @@ protected:
     // GstStateChangeReturn pipeline_status = gst_element_get_state (pipeline, NULL, NULL, -1);
     // if (GST_STATE_CHANGE_SUCCESS != pipeline_status)
 
-    // Enter critical section
-    critical_section_.lock();
+    {
+      // Enter critical section - avoiding console output messed up
+      std::lock_guard<std::mutex> lk(critical_section_);
 #if VIDEOTESTSRC
-    // @remark This is used for pipeline testing
-    std::cout <<
-      "videotestsrc ! videoconvert ! x264enc tune=4 bitrate=500 ! rtph264pay ! udpsink host=" <<
-      property->client_ip.c_str() << " port=" << property->client_port << std::endl << std::endl;
-    std::cout << "Use the following pipeline to receive/display:" << std::endl;
-    std::cout << "gst-launch-1.0 -v udpsrc port=" << property->client_port <<
-      " caps=\"application/x-rtp,media=video,clock-rate=90000,encoding-name=H264,payload=96\"" <<
-      " ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false" << std::endl;
+      // @remark This is used for pipeline testing
+      std::cout <<
+        "videotestsrc ! videoconvert ! x264enc tune=4 bitrate=500 ! rtph264pay ! udpsink host=" <<
+        property->client_ip.c_str() << " port=" << property->client_port << std::endl << std::endl;
+      std::cout << "Use the following pipeline to receive/display:" << std::endl;
+      std::cout << "gst-launch-1.0 -v udpsrc port=" << property->client_port <<
+        " caps=\"application/x-rtp,media=video,clock-rate=90000,encoding-name=H264,payload=96\"" <<
+        " ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false" << std::endl;
 #else
-    std::cout <<
-      "appsrc stream-type=0,is-live=true,format=3 ! video/x-raw,foramt=" <<
-      property->pixel_format.c_str() <<
-      ",width=" << property->width << ",height=" << property->height << ",framerate=0/1" <<
-      " ! videoconvert ! x264enc tune=4 bitrate=500 speed-preset=2 ! rtph264pay ! udpsink host=" <<
-      property->client_ip.c_str() << " port=" << property->client_port << std::endl << std::endl;
-    std::cout << "Use the following pipelines to receive:" << std::endl;
-    std::cout << "gst-launch-1.0 -v udpsrc port=" << property->client_port <<
-      " caps=\"application/x-rtp,media=video,clock-rate=90000,encoding-name=H264,payload=96\"" <<
-      " ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false" <<
-      std::endl << std::endl;
+      std::cout <<
+        "appsrc stream-type=0,is-live=true,format=3 ! video/x-raw,foramt=" <<
+        property->pixel_format.c_str() <<
+        ",width=" << property->width << ",height=" << property->height <<
+        ",framerate=0/1 ! videoconvert ! x264enc tune=4 bitrate=500 speed-preset=2 ! " <<
+        "rtph264pay ! udpsink host=" <<
+        property->client_ip.c_str() << " port=" << property->client_port << std::endl << std::endl;
+      std::cout << "Use the following pipelines to receive:" << std::endl;
+      std::cout << "gst-launch-1.0 -v udpsrc port=" << property->client_port <<
+        " caps=\"application/x-rtp,media=video,clock-rate=90000,encoding-name=H264,payload=96\"" <<
+        " ! rtph264depay ! decodebin ! videoconvert ! autovideosink sync=false" <<
+        std::endl << std::endl;
 #endif
-    std::cout << std::flush;
+      std::cout << std::flush;
 
-    g_message(
-      "VisionStream::configure_run_sending_pipeline running: 0x%lx\n",
-      reinterpret_cast<uintptr_t>(pipeline));
+      g_message(
+        "VisionStream::configure_run_sending_pipeline running: 0x%lx\n",
+        reinterpret_cast<uintptr_t>(pipeline));
 
-    // Exit critical section
-    critical_section_.unlock();
-
+      // Exit critical section
+    }
     // The local stack copy is used for further operation
     property->appsrc = appsrc;
 
@@ -457,11 +458,13 @@ protected:
     // Thread resumes here after exiting from g_main_loop_run
     gst_element_set_state(pipeline, GST_STATE_NULL);
 
-    critical_section_.lock();
-    g_message(
-      "VisionStream::configure_run_sending_pipeline exits: 0x%lx",
-      reinterpret_cast<uintptr_t>(pipeline));
-    critical_section_.unlock();
+    {
+      // Enter critical section - avoiding console output messed up
+      std::lock_guard<std::mutex> lk(critical_section_);
+      g_message(
+        "VisionStream::configure_run_sending_pipeline exits: 0x%lx",
+        reinterpret_cast<uintptr_t>(pipeline));
+    }
 
     gst_object_unref(pipeline);
   }
