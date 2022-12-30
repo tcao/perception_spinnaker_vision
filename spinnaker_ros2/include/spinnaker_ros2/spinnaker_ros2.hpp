@@ -74,7 +74,29 @@ public:
     gui_timer_(nullptr),
     acquired_count_(0)
   {
-    publisher_ = create_publisher<sensor_msgs::msg::Image>(topic_name, rclcpp::SensorDataQoS());
+    // Personally prefer to use SensorDataQoS, but to be compatible with existing tool, such as
+    // image_tools package from https://github.com/ros2/demos, use its default one
+    // QoSInitialization(rmw_qos_history_policy_t history_policy_arg, size_t depth_arg);
+
+    auto qos = rclcpp::QoS(
+      rclcpp::QoSInitialization(
+        // The history policy determines how messages are saved until taken by
+        // the reader.
+        // KEEP_ALL saves all messages until they are taken.
+        // KEEP_LAST enforces a limit on the number of messages that are saved,
+        // specified by the "depth" parameter.
+        rmw_qos_history_policy_t::RMW_QOS_POLICY_HISTORY_KEEP_LAST,
+        // Depth represents how many messages to store in history when the
+        // history policy is KEEP_LAST.
+        10
+    ));
+    // The reliability policy can be reliable, meaning that the underlying transport layer will try
+    // ensure that every message gets received in order, or best effort, meaning that the transport
+    // makes no guarantees about the order or reliability of delivery.
+    qos.reliability(rmw_qos_reliability_policy_t::RMW_QOS_POLICY_RELIABILITY_RELIABLE);
+
+    publisher_ = create_publisher<sensor_msgs::msg::Image>(
+      topic_name, qos /*rclcpp::SensorDataQoS()*/);
   }
   /**
    * @brief Destroy the Spinnaker Ros 2 object

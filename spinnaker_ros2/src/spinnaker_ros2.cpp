@@ -36,8 +36,6 @@
 #include "opencv2/opencv.hpp"
 #include "opencv2/imgproc/types_c.h"
 
-#define ENABLE_SENSOR_TOPIC 0
-
 namespace
 {
 static const char defaultNodeName[] = "spinnaker_ros2";
@@ -298,9 +296,6 @@ void SpinnakerRos2::pose_detect()
       // cv::Affine3d pose(rotation, tvec);
       // pose could be used
 
-      // https://answers.opencv.org/question/161369/retrieve-yaw-pitch-roll-from-rvec/
-      // This is the right answer?
-      // https://answers.opencv.org/question/16796/computing-attituderoll-pitch-yaw-from-solvepnp/?answer=52913#post-id-52913
       // Now object corners and detected corners are matching up, find pose info
       cv::Mat cameraMatrix, rotMatrix, transVect, rotMatrixX, rotMatrixY, rotMatrixZ;
       double * _r = rotation.ptr<double>();

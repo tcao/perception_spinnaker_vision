@@ -30,7 +30,7 @@ If you don't have ament-cmake installed, and you can either
 - Install ament-cmake package
 
 #### ROS 2
-spinnaker_ros2 package should be able to build with ROS2 Foxy or above.
+spinnaker_ros2 package should be built in ROS2 Foxy or above.
 
 ### Running Dependencies
 Same as the build dependencies, plus the following to play streaming video.
@@ -42,12 +42,16 @@ Same as the build dependencies, plus the following to play streaming video.
 
 ## Build
 By default, 
-- driver 
-- test apps:  
+- driver package `spinnaker_driver`
+- test apps in package `spinnaker_perception_apps`:  
 `gigev_config` (to list and configure GigEV camera) and  
 `machine_vision_streaming`  (gstreamer vision streaming)
-- ROS2 package 
-`spinnaker_ros2` (OpenCV/ROS2 sensor message bridge)   
+- ROS2 package `spinnaker_ros2`  
+(OpenCV/ROS2 sensor message bridge)  
+To enable ROS2 image streaming, add the following option to `colcon` build command:  
+`--cmake -DENABLE_SENSOR_TOPIC`  
+Topic `spinnaker_ros2/image` of type `sensor_msgs/msg/Image` will be published.
+
 will be built. Please follow normal cmake project build process.  
 
 If there is "exported target names" related error, your ament_cmake_export_targets package may have a bug in it, and fix it per [this solution](https://github.com/ament/ament_cmake/commit/11c44dbd646846a2e8ca912155f0704e9b0c3c57)
@@ -117,16 +121,27 @@ But I'm not able to view with UDP and H.264 codec
 `video/mp4`  
 which is what the streaming app uses. I will update here once I get HTML5 working
 
-### Publish image acquisition to ROS2 sensor message
+### Detect target/estimate pose, and/or publish image acquisition to ROS2 sensor message
 - spinnaker_ros2  
+Example (detect target and estimate pose):  
+Optional: If you have a chessboard pattern used for camera calibration, put it in front of the camera, and run the following:  
+`ros2 run spinnaker_ros2 spinnaker_ros2 -c 0 -x ./calib.xml`  
+where `-c 0` is for GigEV camera 0, `-x ./calib.xml` specifies the calibration data (the file location could be different, and a default one is provided).  
+If the chessboard used has different grid size than the default (9x6), specify this in command line option:  
+`-w 9 -h 6`  
+<img width="512" src="resources/object_detect_pose_estimate.gif" alt="pose estimation"/>  
+Example (publish when the binary is enabled with ENABLE_SENSOR_TOPIC as indicated above):  
+`ros2 run spinnaker_ros2 spinnaker_ros2 -c 0 -x ./calib.xml --ros-args -r spinnaker_ros2/image:=image`  
+Here the default topic `spinnaker_ros2/image` is remapped to regular topic `image`.
+- Image viewer  
+You can run any image viewer to show acquired images. One **important** note is, the viewer (subscriber) should use the compatible QoS profile as `spinnaker_ros2` (publisher) which is:  
+  - KEEP_LAST as history policy
+  - 10 as depth
+  - RELIABLE as reliability policy  </ul>
+Please see the code for details.  
 Example:  
-`ros2 run spinnaker_ros2 spinnaker_ros2 -c 0 --ros-args -r /spinnaker_ros2/image:=image`  
-Here's GigEV camera 0 is used, and the package's publishing topic is remapped to regular topic:  
-`image` of type `sensor_msgs::msg::Image`.
-- Image viewer 
-You can run any image viewer to show acquired images. One **important** note is, the viewer should use the compatible QoS profile as `spinnaker_ros2` which is:  
-`rclcpp::SensorDataQoS()`.  
-Please see the code for details.
+If you installed package `image_tools` (from `https://github.com/ros2/demos`), run it to view `image` topic as:  
+`ros2 run image_tools showimage`
 
 ## Limitation
 1. Currently, only Point Grey's GigE/PoE camera is supported.
