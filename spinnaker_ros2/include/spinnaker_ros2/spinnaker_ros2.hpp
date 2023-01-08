@@ -48,17 +48,74 @@ static const char defaultUSB3ImageFrameID[] = "spinnaker_usb3";
 
 struct cli_parameters
 {
-  uint32_t camera;        // which camera to use, default should be provided
-  float scale;
-  std::string calib_xml;  // calibration xml
+  uint32_t camera_;         // which camera to use, default should be provided
+  float scale_;
+  std::string calib_xml_;   // calibration xml
   /**
    * @brief Calibration grid pattern dimension
    * @remark As as frame rate, it is filled by driver's connect call
    */
-  spinnaker_driver::ImageDimension dimension;
+  spinnaker_driver::ImageDimension dimension_;
 };
 
-class SpinnakerRos2 : public rclcpp::Node, public image_capture
+/**
+ * @brief Interface defined for image processing synchronization
+ */
+class ProcessingSync
+{
+public:
+  /**
+   * @brief Image manipuation critical section enter/exit
+   * @param enter - Enter critical section when true, exit when false
+   * @remark THis is a blocking call
+   */
+  virtual void enter_critical_section(bool enter) = 0;
+  virtual uint32_t get_sequence_number() = 0;
+  virtual bool is_sequence_number_changed(uint32_t previous) = 0;
+  virtual void get_camera_parameters(
+    cv::Mat & camera_intrinsic, cv::Mat & camera_distortion) const = 0;
+  /**
+   * @brief Submit composed image for rendering
+   */
+  virtual void submit() = 0;
+  /**
+   * @brief Get the image object
+   *
+   * @return const cv::Mat
+   */
+  virtual const cv::Mat get_image() const = 0;
+};
+
+typedef std::shared_ptr<ProcessingSync> ProcessingSyncPtr;
+
+// Forward declaration
+class SpinnakerRos2;
+
+class ImageProcessInstance
+{
+  struct image_process_context
+  {
+    std::mutex processing_ready_mutex_;
+    std::condition_variable processing_ready_condition_;
+    volatile bool ready_;
+    bool processing_exit_;
+  };
+
+public:
+  explicit ImageProcessInstance(ProcessingSyncPtr sync)
+  : sync_(sync)
+  {}
+  virtual ~ImageProcessInstance() {}
+  virtual void ready() = 0;
+  virtual void process() = 0;
+
+protected:
+  ProcessingSyncPtr sync_;
+  image_process_context image_process_context_;
+};
+typedef std::shared_ptr<ImageProcessInstance> ImageProcessInstancePtr;
+
+class SpinnakerRos2 : public rclcpp::Node, public image_capture, public ProcessingSync
 {
 public:
   SpinnakerRos2(
@@ -70,7 +127,7 @@ public:
   : Node(node_name, node_options),
     image_capture(handler, 0, false),
     timestamp_(0),
-    pose_detection_exit_(false),
+    image_process_exit_(false),
     gui_timer_(nullptr),
     acquired_count_(0)
   {
@@ -103,6 +160,13 @@ public:
    * @remark Explicit destructor so shared_ptr has a opportunity to get taken care of
    */
   virtual ~SpinnakerRos2() {}
+
+  /**
+   * @brief Add an image process instance
+   * @remark Call this before initialize
+   * @param instance
+   */
+  void add_image_process_instance(ImageProcessInstancePtr instance);
 
   /**
    * @brief Initialize SpinnakerRos2 instance after creation
@@ -153,12 +217,16 @@ public:
 
   void gui_timer_callback(void);
 
-protected:
-  /**
-   * @brief Main thread for object detection and pose estimation
-   */
-  void pose_detect();
+  #pragma mark Overrides for ProcessingSync
+  void enter_critical_section(bool enter) override;
+  uint32_t get_sequence_number() override;
+  bool is_sequence_number_changed(uint32_t previous) override;
+  void get_camera_parameters(
+    cv::Mat & camera_intrinsic, cv::Mat & camera_distortion) const override;
+  const cv::Mat get_image() const override;
+  void submit() override;
 
+protected:
   /**
    * @brief Main thread to manage image processing,
    * including managing pose_detect thread
@@ -182,29 +250,32 @@ protected:
   std::condition_variable frame_ready_condition_;
 
   /**
-   * @brief Synchronization to access cv::
+   * @brief Synchronization to access cv::Mat _image of base class image_capture
    */
   std::mutex critical_section_;
 
-  volatile bool pose_detection_exit_;
+  // lock_guard and unique_lock uses RAII,
+  // so we initialize the lock heare w/o actually lock it by specifying std::defer_lock
+  std::unique_lock<std::mutex> critical_section_lock_{critical_section_, std::defer_lock};
+
+  volatile bool image_process_exit_;
 
   rclcpp::TimerBase::SharedPtr gui_timer_;
   /**
    * @brief Successful image acquisition count
-   *
    */
   volatile uint32_t acquired_count_;
 
   // OpenCV related
-  float scale_;
-  cv::Size grid_size_;
   cv::Mat camera_intrinsic_;
   cv::Mat camera_distortion_;
-  /**
-   * @brief 3D grid pattern (chessboard) corners scene with origin at the center
-   */
-  std::vector<cv::Point3f> target_corners_;
+
   std::thread pose_detect_thread_;
+
+  /**
+   * @brief Image processing context stack
+   */
+  std::vector<ImageProcessInstancePtr> image_process_instances_;
 };  // class SpinnakerRos2
 }  // namespace spinnaker_ros2
 #endif  // SPINNAKER_ROS2__SPINNAKER_ROS2_HPP_

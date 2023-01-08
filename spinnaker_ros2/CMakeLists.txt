@@ -33,7 +33,9 @@ find_package(OpenCV REQUIRED)
 
 include_directories(include)
 
-add_executable(${PROJECT_NAME} src/${PROJECT_NAME}.cpp)
+add_executable(${PROJECT_NAME} src/${PROJECT_NAME}.cpp
+  src/chessboard_pose_estimate.cpp
+)
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
