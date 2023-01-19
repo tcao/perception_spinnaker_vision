@@ -24,6 +24,7 @@
 #include <string>
 
 // apriltag
+#if ENABLE_APRILTAG
 #include "apriltag/tag36h11.h"
 #include "apriltag/tag25h9.h"
 #include "apriltag/tag16h5.h"
@@ -32,6 +33,7 @@
 #include "apriltag/tagCustom48h12.h"
 #include "apriltag/tagStandard41h12.h"
 #include "apriltag/tagStandard52h13.h"
+#endif
 
 #include "spinnaker_ros2/apriltag_pose_estimate.hpp"
 
