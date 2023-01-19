@@ -48,7 +48,10 @@ static const char defaultUSB3ImageFrameID[] = "spinnaker_usb3";
 
 struct cli_parameters
 {
+  // Parameters for Spinnaker driver
   uint32_t camera_;         // which camera to use, default should be provided
+
+  // Parameters for chessboard detection and pose estimation
   float scale_;
   std::string calib_xml_;   // calibration xml
   /**
@@ -56,6 +59,10 @@ struct cli_parameters
    * @remark As as frame rate, it is filled by driver's connect call
    */
   spinnaker_driver::ImageDimension dimension_;
+
+  // Parameters for Apriltag detection and pose estimation
+  std::string tag_family_;
+  float tag_size_;
 };
 
 /**
@@ -77,7 +84,7 @@ public:
   /**
    * @brief Submit composed image for rendering
    */
-  virtual void submit() = 0;
+  virtual void submit(int who = 0) = 0;
   /**
    * @brief Get the image object
    *
@@ -87,6 +94,45 @@ public:
 };
 
 typedef std::shared_ptr<ProcessingSync> ProcessingSyncPtr;
+
+/**
+ * @brief Sync class in RAII
+ */
+class RaiiSync
+{
+public:
+  RaiiSync(ProcessingSyncPtr sync, int id, uint32_t sid)
+  : sync_(sync), id_(id), sid_(sid)
+  {
+    sync_count_critical_section_.lock();
+    sync_count_++;
+    std::cout << "raii " << id_ << " instantiated: " << sync_count_ << " for seq: " <<
+      sid_ << std::endl;
+    sync_count_critical_section_.unlock();
+  }
+  virtual ~RaiiSync()
+  {
+    sync_count_critical_section_.lock();
+    if (0 != sync_count_) {
+      sync_count_--;
+      std::cout << "raii " << id_ << " destroying: " << sync_count_ << " for seq: " <<
+        sid_ << std::endl;
+      if (0 == sync_count_) {
+        sync_->submit(id_);
+      }
+    }
+    sync_count_critical_section_.unlock();
+  }
+
+protected:
+  ProcessingSyncPtr sync_;
+  int id_;
+  uint32_t sid_;
+
+public:
+  static uint32_t sync_count_;
+  static std::mutex sync_count_critical_section_;
+};
 
 // Forward declaration
 class SpinnakerRos2;
@@ -99,6 +145,8 @@ class ImageProcessInstance
     std::condition_variable processing_ready_condition_;
     volatile bool ready_;
     bool processing_exit_;
+    cv::Mat camera_intrinsic_;
+    cv::Mat camera_distortion_;
   };
 
 public:
@@ -154,6 +202,8 @@ public:
 
     publisher_ = create_publisher<sensor_msgs::msg::Image>(
       topic_name, qos /*rclcpp::SensorDataQoS()*/);
+
+    who_submit_ = -1;
   }
   /**
    * @brief Destroy the Spinnaker Ros 2 object
@@ -224,7 +274,7 @@ public:
   void get_camera_parameters(
     cv::Mat & camera_intrinsic, cv::Mat & camera_distortion) const override;
   const cv::Mat get_image() const override;
-  void submit() override;
+  void submit(int who = 0) override;
 
 protected:
   /**
@@ -269,13 +319,16 @@ protected:
   // OpenCV related
   cv::Mat camera_intrinsic_;
   cv::Mat camera_distortion_;
-
+  cv::Mat processing_image_;
+  volatile bool processin_image_done_;
   std::thread pose_detect_thread_;
 
   /**
    * @brief Image processing context stack
    */
   std::vector<ImageProcessInstancePtr> image_process_instances_;
+
+  int who_submit_;
 };  // class SpinnakerRos2
 }  // namespace spinnaker_ros2
 #endif  // SPINNAKER_ROS2__SPINNAKER_ROS2_HPP_

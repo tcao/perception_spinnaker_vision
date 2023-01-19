@@ -31,10 +31,20 @@ find_package(spinnaker_driver REQUIRED)
 find_package(spinnaker_perception_apps REQUIRED)
 find_package(OpenCV REQUIRED)
 
+if(ENABLE_APRILTAG)
+  add_compile_options(-DENABLE_APRILTAG=1)
+  find_package(apriltag REQUIRED)
+  add_link_options(-lapriltag)
+  if(APPLE)
+    add_link_options(-L/usr/local/lib)
+  endif()
+endif()
+
 include_directories(include)
 
 add_executable(${PROJECT_NAME} src/${PROJECT_NAME}.cpp
   src/chessboard_pose_estimate.cpp
+  src/apriltag_pose_estimate.cpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

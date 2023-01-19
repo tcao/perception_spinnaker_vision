@@ -1,5 +1,5 @@
 //
-// Copyright 2022 Ting Cao <cao_ting@yahoo.com>
+// Copyright 2023 Ting Cao <cao_ting@yahoo.com>
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@
 namespace ChessboardPoseEstimate
 {
 static const rclcpp::Logger ChessboardLogger = rclcpp::get_logger("chessboard_processor");
+static const int processorID(1);
 
 ChessboardPoseEstimate::ChessboardPoseEstimate(
   spinnaker_ros2::ProcessingSyncPtr sync,
@@ -71,18 +72,23 @@ void ChessboardPoseEstimate::process()
   image_process_context_.processing_exit_ = false;
   uint32_t sequence = 0;
 
+  sync_->get_camera_parameters(
+    image_process_context_.camera_intrinsic_, image_process_context_.camera_distortion_);
+
+
   cv::Vec3d eulerAngles;  // object pose in yaw/pitch/roll
   cv::Mat tvec, rvec;     // translation/rotation vector
-  cv::Mat camera_intrinsic, camera_distortion;
-  sync_->get_camera_parameters(camera_intrinsic, camera_distortion);
 
   RCLCPP_INFO(ChessboardLogger, "chessboard processor thread is up");
 
   static uint32_t count = 0;
   while (!image_process_context_.processing_exit_) {
     count++;
+    RCLCPP_INFO(ChessboardLogger, "chessboard ready: %d", sync_->get_sequence_number());
     std::unique_lock<std::mutex> guard(image_process_context_.processing_ready_mutex_);
     image_process_context_.processing_ready_condition_.wait(guard);
+    RCLCPP_INFO(ChessboardLogger, "chessboard run: %d", sync_->get_sequence_number());
+    spinnaker_ros2::RaiiSync submit_sync(sync_, processorID, sync_->get_sequence_number());
 
     // Now notification is received and the mutex is locked
     if (image_process_context_.processing_exit_) {
@@ -97,7 +103,6 @@ void ChessboardPoseEstimate::process()
     guard.unlock();
 
     sequence = sync_->get_sequence_number();
-
 
     // Get a frame reference, and it could be changed during the process
     cv::Mat image = sync_->get_image();
@@ -121,6 +126,7 @@ void ChessboardPoseEstimate::process()
       // to shortcut the detecting when there is no chessboard
       cv::CALIB_CB_ADAPTIVE_THRESH | cv::CALIB_CB_FAST_CHECK | cv::CALIB_CB_NORMALIZE_IMAGE
     );
+    RCLCPP_INFO(ChessboardLogger, "detected: %d", found);
 
     if (image_process_context_.processing_exit_) {
       break;
@@ -145,6 +151,7 @@ void ChessboardPoseEstimate::process()
         0.1   // min accuracy
       )
     );
+    RCLCPP_INFO(ChessboardLogger, "subpix");
 
     if (image_process_context_.processing_exit_) {
       break;
@@ -155,13 +162,23 @@ void ChessboardPoseEstimate::process()
     }
 
     // It may take long time to detect pose
-    bool solved = cv::solvePnP(
-      target_corners_,
-      detected_corners,
-      camera_intrinsic,
-      camera_distortion,
-      rvec,
-      tvec);
+    bool solved = false;
+    try {
+      solved = cv::solvePnP(
+        target_corners_,
+        detected_corners,
+        image_process_context_.camera_intrinsic_,
+        image_process_context_.camera_distortion_,
+        rvec,
+        tvec);
+    } catch (cv::Exception e) {
+      RCLCPP_ERROR(ChessboardLogger, "solvePnP exception: %d\n%s", count, e.what());
+      if (image_process_context_.ready_) {
+        image_process_context_.ready_ = false;
+      }
+      continue;
+    }
+    RCLCPP_INFO(ChessboardLogger, "solved: %d", solved);
 
     if (image_process_context_.processing_exit_) {
       break;
@@ -211,6 +228,8 @@ void ChessboardPoseEstimate::process()
       }
     }
 
+    RCLCPP_INFO(ChessboardLogger, "enter cs: %x", image.data);
+
     // Ready for overlay composing
     sync_->enter_critical_section(true);
 
@@ -231,7 +250,7 @@ void ChessboardPoseEstimate::process()
         image, pose_label, label_position,
         cv::FONT_HERSHEY_PLAIN,
         1.0,  // font scale
-        cv::Scalar(0, 255, 255),  // color
+        cv::Scalar(0, 255, 255),  // Yellow
         2     // thickness
       );
 
@@ -242,7 +261,7 @@ void ChessboardPoseEstimate::process()
         image, pose_label, label_position,
         cv::FONT_HERSHEY_PLAIN,
         1.0,  // font scale
-        cv::Scalar(0, 255, 255),  // color
+        cv::Scalar(0, 255, 255),  // Yellow
         2     // thickness
       );
 
@@ -253,7 +272,7 @@ void ChessboardPoseEstimate::process()
         image, pose_label, label_position,
         cv::FONT_HERSHEY_PLAIN,
         1.0,  // font scale
-        cv::Scalar(0, 255, 255),  // color
+        cv::Scalar(0, 255, 255),  // Yellow
         2     // thickness
       );
 
@@ -268,9 +287,8 @@ void ChessboardPoseEstimate::process()
         2     // thickness
       );
     }
-    // Release for displaying - this could be 2nd overlay
-    sync_->submit();
     sync_->enter_critical_section(false);
+    RCLCPP_INFO(ChessboardLogger, "exit cs");
   }   // while
 }
 }  // namespace ChessboardPoseEstimate

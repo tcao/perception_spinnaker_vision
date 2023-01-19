@@ -26,12 +26,16 @@
 #include <memory>
 #include <utility>
 #include <mutex>
+#include <thread>
 #include <condition_variable>
 #include <filesystem>
 
 #include "spinnaker_driver/spinnaker_driver.hpp"
 #include "spinnaker_ros2/spinnaker_ros2.hpp"
 #include "spinnaker_ros2/chessboard_pose_estimate.hpp"
+#if ENABLE_APRILTAG
+  #include "spinnaker_ros2/apriltag_pose_estimate.hpp"
+#endif
 
 // OpenCV headers
 #include "opencv2/opencv.hpp"
@@ -42,12 +46,21 @@ namespace
 static const char defaultNodeName[] = "spinnaker_ros2";
 static const char defaultImageTopicName[] = "image";
 static const char defaultCalibrationXml[] = "gigev_calib.xml";
+static const int32_t maxImageWidthNotResized(1200);
+static const std::chrono::milliseconds guiTimerPeriodMs(10);
+static const std::chrono::milliseconds guiFlushingWaitMs(8);  // shorter than guiTimerPeriodMs
+
+// Default parameters for driver
 static const uint32_t defaultCamera(0);
+// Default parameters for Chessboard
 static const float defaultGridDimensionScale(1.0f);
 static const uint32_t defaultGridWithCount(9);
 static const uint32_t defaultGridHeightCount(6);
-static const int32_t maxImageWidthNotResized(1200);
-static const uint32_t guiTimerPeriodMs(10);
+
+// Default parameters for Apriltag
+static const float defaultTagSizeMm(30);            // size in mm
+static const char defaultTagFamily[] = "tag36h11";  // tag36h11 has good compatibility
+                                                    // Another good choice is 9x9 41h12
 
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("spinnaker_ros2");
 
@@ -62,6 +75,10 @@ void signal_handler(int signal)
 
 namespace spinnaker_ros2
 {
+// Instantiate static variables for RaiiSync
+uint32_t RaiiSync::sync_count_ = 0;
+std::mutex RaiiSync::sync_count_critical_section_;
+
 void SpinnakerRos2::add_image_process_instance(ImageProcessInstancePtr instance)
 {
   image_process_instances_.push_back(instance);
@@ -79,7 +96,7 @@ bool SpinnakerRos2::initialize(const cli_parameters & parameters)
 
   // Prepare GUI timer, the purpose is to run GUI code in main thread
   gui_timer_ = create_wall_timer(
-    std::chrono::milliseconds(guiTimerPeriodMs),
+    guiTimerPeriodMs,
     std::bind(&SpinnakerRos2::gui_timer_callback, this));
   gui_timer_->cancel();
 
@@ -97,6 +114,7 @@ bool SpinnakerRos2::initialize(const cli_parameters & parameters)
 }
 
 #pragma mark Overrides for image_capture
+// @remark image_ is in acquistion context, and should be not used for direct image processing
 void SpinnakerRos2::acquired(const spinnaker_driver::AcquiredImage * img)
 {
   // count for normal operations
@@ -157,7 +175,7 @@ void SpinnakerRos2::acquired(const spinnaker_driver::AcquiredImage * img)
     if (converted) {
       // RCLCPP_INFO(LOGGER, "acquired: %d", count);
       if (image_handler) {
-        // Call user ligic if it is installed
+        // Call user logic if it is installed
         // image_handler(image_);
       }
       image_release();
@@ -189,18 +207,18 @@ void SpinnakerRos2::image_release()
   msg->header.stamp.sec = static_cast<int32_t>(timestamp / 1000000000);
   msg->header.stamp.nanosec = static_cast<uint32_t>(timestamp % 1000000000);
   msg->header.frame_id = defaultGigEVImageFrameID;
-  msg->height = image_.rows;
-  msg->width = image_.cols;
+  msg->height = processing_image_.rows;
+  msg->width = processing_image_.cols;
   try {
-    msg->encoding = getEncoding(image_.type());
+    msg->encoding = getEncoding(processing_image_.type());
   } catch (const std::exception & e) {
-    RCLCPP_ERROR(LOGGER, "Unknown/Unsupported CV type: %d", image_.type());
+    RCLCPP_ERROR(LOGGER, "Unknown/Unsupported CV type: %d", processing_image_.type());
     // Skip
     return;
   }
   msg->is_bigendian = false;
-  msg->step = static_cast<sensor_msgs::msg::Image::_step_type>(image_.step);
-  msg->data.assign(image_.datastart, image_.dataend);
+  msg->step = static_cast<sensor_msgs::msg::Image::_step_type>(processing_image_.step);
+  msg->data.assign(processing_image_.datastart, processing_image_.dataend);
   publisher_->publish(std::move(msg));
 #endif
   // Notify receiving thread data is updated and ready
@@ -220,7 +238,10 @@ void SpinnakerRos2::image_process()
 {
   image_process_exit_ = false;
   uint32_t sequence_id = acquired_count_;
+  bool flush_wait = false;
   while (!image_process_exit_) {
+    // May not need RaiiSync to protect image rendering
+    RCLCPP_INFO(LOGGER, "\nmain loop ready");
     // unique_lock instead of lock_guard is used because of conditional_variable's
     // nature which performs lock and unlock during its wait
     std::unique_lock<std::mutex> guard(this->frame_ready_mutex_);
@@ -230,14 +251,41 @@ void SpinnakerRos2::image_process()
     frame_ready_condition_.wait(guard);
     // Now frame_ready_mutex_ is locked again
 
-    // Backup current sequence #, since it could be changed during this loop iteration
-    sequence_id = acquired_count_;
+    RCLCPP_INFO(LOGGER, "\nmain loop run %d/%d", sequence_id, acquired_count_);
 
     // image_process_exit_ could be changed after the above potential long wait,
     // which could be forced to abort, so let's check again
     if (image_process_exit_) {
       break;
     }
+
+    flush_wait = false;
+    // Check if previous run's image is shown
+    // @TODO(tcao): There is potential collision accessing RaiiSync::sync_count
+    if (0 != RaiiSync::sync_count_) {
+      // Not all processors are done, so no image is rendered,
+      // let's force a flushing with previous run's image
+      submit(0);
+      flush_wait = true;
+    } else {
+      // Deep copy first guiFlushingWaitMs
+      processing_image_ = image_.clone();
+    }
+
+    if (flush_wait) {
+      // Wait till GUI main thread has the opportunity to flush rendering pipeline
+      uint32_t wait_count = 0;
+      while (!processin_image_done_) {
+        std::this_thread::sleep_for(guiFlushingWaitMs);
+        wait_count++;
+      }
+      RCLCPP_INFO(LOGGER, "pipeline waited %u", wait_count);
+      // Deep copy acquired image
+      processing_image_ = image_.clone();
+    }
+
+    // Backup current sequence #, since it could be changed during this loop iteration
+    sequence_id = acquired_count_;
 
     // Notify all processors an acquisition is ready
     for (ImageProcessInstancePtr instance : image_process_instances_) {
@@ -248,13 +296,14 @@ void SpinnakerRos2::image_process()
     {
       // Critical section to avoid concurrent image manipulation
       enter_critical_section(true);
+      RCLCPP_INFO(LOGGER, "enter cs: %x", processing_image_.data);
       // Annotation
       static char counter_label[128] = {0};
       snprintf(counter_label, sizeof(counter_label), "%d", sequence_id);
       // X/Y, where origin at top left, y+ points down
-      cv::Point2d label_position(image_.cols - 150, image_.rows - 30);
+      cv::Point2d label_position(processing_image_.cols - 150, processing_image_.rows - 30);
       cv::putText(
-        image_, counter_label, label_position,
+        processing_image_, counter_label, label_position,
         cv::FONT_HERSHEY_PLAIN,
         2.0,  // font scale
         cv::Scalar(0, 255, 0),  // color in BGR
@@ -276,18 +325,24 @@ void SpinnakerRos2::image_process()
       label_position.y = 20;
       snprintf(counter_label, sizeof(counter_label), "%s", localtime.str().c_str());
       cv::putText(
-        image_, counter_label, label_position,
+        processing_image_, counter_label, label_position,
         cv::FONT_HERSHEY_PLAIN,
         2.0,  // font scale
         cv::Scalar(0, 0, 255),  // color
         2     // thickness
       );
+
+      // Release for displaying when there is no processor is installed
+      if (0 == image_process_instances_.size()) {
+        submit();
+      }
+      // otherwise let each processor to signal when it's processing is done, and
+      // then perform overlay collectively
+      // @remark Note the rendering is done once per acquistion
       // Critical section exits
       enter_critical_section(false);
+      RCLCPP_INFO(LOGGER, "exit cs");
     }
-
-    // Release for displaying - pose estimation may add another overlay
-    gui_timer_->reset();
     // guard is unlocked
   }
 }
@@ -298,14 +353,20 @@ void SpinnakerRos2::image_process()
  */
 void SpinnakerRos2::gui_timer_callback()
 {
+  RCLCPP_INFO(
+    LOGGER, "timer fired: seq %u, by processor %d: %x",
+    get_sequence_number(), who_submit_, processing_image_.data);
   // Make sure to display the current acquired/synthesized image
   // Skip enter_critical_section calls in purpose
   std::unique_lock<std::mutex> guard(critical_section_);
-  cv::Mat frame = image_;
-  guard.unlock();
+  // If guard.unlock is called, the next callback may not happen (being cancelled)
 
-  cv::imshow(defaultNodeName, frame);
+  cv::imshow(defaultNodeName, processing_image_);
   cv::waitKey(1);
+
+  processin_image_done_ = true;
+
+  RCLCPP_INFO(LOGGER, "timer done: %u", get_sequence_number());
   gui_timer_->cancel();
 }
 
@@ -321,7 +382,7 @@ void SpinnakerRos2::enter_critical_section(bool enter)
       // @remark Direct use critical_section_.unlock works as well
     }
   } catch (std::exception e) {
-    std::cerr << "exception - enter_critical_section: " << enter << ", with" <<
+    std::cerr << "exception - enter_critical_section: " << enter << ", with " <<
       e.what() << std::endl;
     std::cerr << std::flush;
   }
@@ -347,11 +408,14 @@ void SpinnakerRos2::get_camera_parameters(
 
 const cv::Mat SpinnakerRos2::get_image() const
 {
-  return image_;
+  return processing_image_;
 }
 
-void SpinnakerRos2::submit()
+void SpinnakerRos2::submit(int who)
 {
+  RCLCPP_INFO(LOGGER, "submit: by %d/previous %d", who, who_submit_);
+  who_submit_ = who;
+  processin_image_done_ = false;
   // Release for displaying - pose estimation may add another overlay
   gui_timer_->reset();
 }
@@ -393,6 +457,7 @@ bool argument_parse(int argc, char * argv[], spinnaker_ros2::cli_parameters * pa
         }
       }
 
+      // Camera intrinsic parameter
       if ("-x" == *i) {
         try {
           std::string xml = *++i;
@@ -403,6 +468,7 @@ bool argument_parse(int argc, char * argv[], spinnaker_ros2::cli_parameters * pa
         }
       }
 
+      // Chessboard
       if ("-w" == *i) {
         try {
           uint32_t width = (uint32_t)std::stoul(*++i);
@@ -432,12 +498,34 @@ bool argument_parse(int argc, char * argv[], spinnaker_ros2::cli_parameters * pa
             "Bad argument, use default grid scale" << parameters->scale_ << std::endl;
         }
       }
+
+      // Apriltag
+      if ("-f" == *i) {
+        try {
+          std::string family = *++i;
+          parameters->tag_family_ = family;
+        } catch (const std::exception & e) {
+          std::cerr << e.what() << std::endl <<
+            "Bad argument, use default apriltag family" << parameters->tag_family_ << std::endl;
+        }
+      }
+
+      if ("-s" == *i) {
+        try {
+          float size = std::stof(*++i);
+          parameters->tag_size_ = size;
+        } catch (const std::exception & e) {
+          std::cerr << e.what() << std::endl <<
+            "Bad argument, use default tag size" << parameters->tag_size_ << std::endl;
+        }
+      }
     }
   }
 
   if (help) {
-    std::cout << argv[0] << " [-c <camera>] [-x <calib xml>] [--help] " <<
-      "[-w <grid width>] [-h <grid height>] [-l <grid dimension scale>]" << std::endl;
+    std::cout << argv[0] << " [-c <camera>] [-x <calib xml>] [--help] " << std::endl <<
+      "[-w <grid width>] [-h <grid height>] [-l <grid dimension scale>]" << std::endl <<
+      "[-f <apriltag family>] [-s <apriltag size (mm)>]" << std::endl;
 
     std::cout << "-c (default=" << parameters->camera_ << ") to specify which camera to use" <<
       std::endl;
@@ -455,6 +543,10 @@ bool argument_parse(int argc, char * argv[], spinnaker_ros2::cli_parameters * pa
     std::cout << "-l (optional, default=" << parameters->scale_ <<
       ") to specify pattern grid dimension scaling factor" << std::endl;
 
+    std::cout << "-f (optional, default=" << parameters->tag_family_ << ")" << std::endl;
+
+    std::cout << "-s (optional, default=" << parameters->tag_size_ << " mm)" << std::endl;
+
     return false;
   }
 
@@ -471,6 +563,8 @@ int main(int argc, char * argv[])
       .width = defaultGridWithCount,
       .height = defaultGridHeightCount,
     },
+    .tag_family_ = defaultTagFamily,
+    .tag_size_ = defaultTagSizeMm,
   };
 
   if (!argument_parse(argc, argv, &parameters)) {
@@ -506,10 +600,19 @@ int main(int argc, char * argv[])
   executor.add_node(spinnaker_ros2);
 
   // Instantiate chessboard pose estimate processor
+#if 1
   auto chessboard_processor = std::make_shared<ChessboardPoseEstimate::ChessboardPoseEstimate>(
     spinnaker_ros2,
     parameters.dimension_.width, parameters.dimension_.height, parameters.scale_);
   spinnaker_ros2->add_image_process_instance(chessboard_processor);
+#endif
+#if ENABLE_APRILTAG
+  auto apriltag_processor = std::make_shared<ApriltagPoseEstimate::ApriltagPoseEstimate>(
+    spinnaker_ros2,
+    parameters.tag_family_,
+    parameters.tag_size_);
+  spinnaker_ros2->add_image_process_instance(apriltag_processor);
+#endif
 
   if (spinnaker_ros2->initialize(parameters)) {
     // Instantiate GigEV driver

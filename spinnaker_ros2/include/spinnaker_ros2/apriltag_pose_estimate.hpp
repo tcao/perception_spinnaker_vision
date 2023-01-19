@@ -14,29 +14,35 @@
 // limitations under the License.
 
 ///
-/// Chessboard detection and pose estimation as part of
+/// April detection and pose estimation as part of
 /// ROS2 package for GigEV camera based on Spinnaker SDK
 ///
 /// @Thanks Maxar. This code is done in Maxar time (ting.cao@maxar.com)
 ///
 
-#ifndef SPINNAKER_ROS2__CHESSBOARD_POSE_ESTIMATE_HPP_
-#define SPINNAKER_ROS2__CHESSBOARD_POSE_ESTIMATE_HPP_
+#ifndef SPINNAKER_ROS2__APRILTAG_POSE_ESTIMATE_HPP_
+#define SPINNAKER_ROS2__APRILTAG_POSE_ESTIMATE_HPP_
+
+#if ENABLE_APRILTAG
+extern "C" {
+  #include "apriltag/apriltag.h"
+}
+#endif
 
 // STD
 #include <vector>
 #include <memory>
+#include <string>
 
 #include "spinnaker_ros2/spinnaker_ros2.hpp"
-
-namespace ChessboardPoseEstimate
+#if ENABLE_APRILTAG
+namespace ApriltagPoseEstimate
 {
-class ChessboardPoseEstimate : public spinnaker_ros2::ImageProcessInstance
+class ApriltagPoseEstimate : public spinnaker_ros2::ImageProcessInstance
 {
 public:
-  ChessboardPoseEstimate(
-    spinnaker_ros2::ProcessingSyncPtr sync,
-    uint32_t grid_width, uint32_t grid_height, float scale
+  ApriltagPoseEstimate(
+    spinnaker_ros2::ProcessingSyncPtr sync, std::string family, float size
   );
 
 #pragma mark spinnaker_ros2::ImageProcessInstance
@@ -47,13 +53,14 @@ public:
   void process() override;
 
 protected:
-  cv::Size grid_size_;
-  float scale_;
+  std::string family_;
+  float size_;
   /**
    * @brief 3D grid pattern (chessboard) corners scene with origin at the center
    */
   std::vector<cv::Point3f> target_corners_;
 };
-typedef std::shared_ptr<ChessboardPoseEstimate> ChessboardPoseEstimatePtr;
-}  // namespace ChessboardPoseEstimate
-#endif  // SPINNAKER_ROS2__CHESSBOARD_POSE_ESTIMATE_HPP_
+typedef std::shared_ptr<ApriltagPoseEstimate> ApriltagPoseEstimatePtr;
+}  // namespace ApriltagPoseEstimate
+#endif  // ENABLE_APRILTAG
+#endif  // SPINNAKER_ROS2__APRILTAG_POSE_ESTIMATE_HPP_
