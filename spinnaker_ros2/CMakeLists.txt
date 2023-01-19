@@ -31,7 +31,7 @@ find_package(spinnaker_driver REQUIRED)
 find_package(spinnaker_perception_apps REQUIRED)
 find_package(OpenCV REQUIRED)
 
-# In my Humble/Ubuntu 22.0 box, colcon won't take --cmake-args -DENABLE_APRILTAG=ON
+# In my Humble/Ubuntu 22.0 box, colcon won't pass --cmake-args -DENABLE_APRILTAG=ON to cmake
 # so in Linux build default ENABLE_APRILTAG to true
 if (CMAKE_SYSTEM_NAME MATCHES "Linux")
   set(ENABLE_APRILTAG TRUE)
@@ -72,7 +72,6 @@ ament_target_dependencies(
   "spinnaker_driver"
   "spinnaker_perception_apps"
   "OpenCV"
-  "apriltag"
   )
 
 install(TARGETS ${PROJECT_NAME}
