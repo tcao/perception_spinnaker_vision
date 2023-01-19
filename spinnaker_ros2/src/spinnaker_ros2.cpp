@@ -296,7 +296,7 @@ void SpinnakerRos2::image_process()
     {
       // Critical section to avoid concurrent image manipulation
       enter_critical_section(true);
-      RCLCPP_INFO(LOGGER, "enter cs: %x", processing_image_.data);
+      RCLCPP_INFO(LOGGER, "enter cs: %p", processing_image_.data);
       // Annotation
       static char counter_label[128] = {0};
       snprintf(counter_label, sizeof(counter_label), "%d", sequence_id);
@@ -354,7 +354,7 @@ void SpinnakerRos2::image_process()
 void SpinnakerRos2::gui_timer_callback()
 {
   RCLCPP_INFO(
-    LOGGER, "timer fired: seq %u, by processor %d: %x",
+    LOGGER, "timer fired: seq %u, by processor %d: %p",
     get_sequence_number(), who_submit_, processing_image_.data);
   // Make sure to display the current acquired/synthesized image
   // Skip enter_critical_section calls in purpose
@@ -381,7 +381,7 @@ void SpinnakerRos2::enter_critical_section(bool enter)
       critical_section_lock_.unlock();
       // @remark Direct use critical_section_.unlock works as well
     }
-  } catch (std::exception e) {
+  } catch (std::exception & e) {
     std::cerr << "exception - enter_critical_section: " << enter << ", with " <<
       e.what() << std::endl;
     std::cerr << std::flush;

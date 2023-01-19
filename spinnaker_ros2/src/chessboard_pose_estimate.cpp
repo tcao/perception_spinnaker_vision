@@ -171,7 +171,7 @@ void ChessboardPoseEstimate::process()
         image_process_context_.camera_distortion_,
         rvec,
         tvec);
-    } catch (cv::Exception e) {
+    } catch (cv::Exception & e) {
       RCLCPP_ERROR(ChessboardLogger, "solvePnP exception: %d\n%s", count, e.what());
       if (image_process_context_.ready_) {
         image_process_context_.ready_ = false;
@@ -228,7 +228,7 @@ void ChessboardPoseEstimate::process()
       }
     }
 
-    RCLCPP_INFO(ChessboardLogger, "enter cs: %x", image.data);
+    RCLCPP_INFO(ChessboardLogger, "enter cs: %p", image.data);
 
     // Ready for overlay composing
     sync_->enter_critical_section(true);

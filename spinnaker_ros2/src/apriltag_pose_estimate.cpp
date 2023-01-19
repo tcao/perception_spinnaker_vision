@@ -201,7 +201,7 @@ void ApriltagPoseEstimate::process()
     // Ready for overlay composing
     RCLCPP_INFO(ApriltagLogger, "detected tag #: %d", zarray_size(detections));
     sync_->enter_critical_section(true);
-    RCLCPP_INFO(ApriltagLogger, "enter cs: %x", image.data);
+    RCLCPP_INFO(ApriltagLogger, "enter cs: %p", image.data);
     for (int i = 0; i < zarray_size(detections); i++) {
       apriltag_detection_t * det;
       zarray_get(detections, i, &det);
