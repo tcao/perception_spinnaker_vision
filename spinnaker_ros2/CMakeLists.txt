@@ -34,9 +34,10 @@ find_package(OpenCV REQUIRED)
 if(ENABLE_APRILTAG)
   add_compile_options(-DENABLE_APRILTAG=1)
   find_package(apriltag REQUIRED)
-  add_link_options(-lapriltag)
+  # It seems Linux doesn't like add_link_options while Apple does
+  # So for Linux, adding target_link_libraries as below
   if(APPLE)
-    add_link_options(-L/usr/local/lib)
+    add_link_options(-L/usr/local/lib -lapriltag)
   endif()
 endif()
 
@@ -50,6 +51,14 @@ target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
   )
+
+# Can't not use if (UNIX), it applies to both Linux and macOS
+if (CMAKE_SYSTEM_NAME MATCHES "Linux")
+target_link_libraries(${PROJECT_NAME}
+  ${spinnaker_driver_TARGETS}
+  apriltag
+  ${OpenCV_LIBS})
+endif()
 ament_target_dependencies(
   ${PROJECT_NAME}
   "rclcpp"
@@ -58,6 +67,7 @@ ament_target_dependencies(
   "spinnaker_driver"
   "spinnaker_perception_apps"
   "OpenCV"
+  "apriltag"
   )
 
 install(TARGETS ${PROJECT_NAME}
