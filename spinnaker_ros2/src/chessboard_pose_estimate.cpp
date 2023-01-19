@@ -70,7 +70,6 @@ void ChessboardPoseEstimate::ready()
 void ChessboardPoseEstimate::process()
 {
   image_process_context_.processing_exit_ = false;
-  uint32_t sequence = 0;
 
   sync_->get_camera_parameters(
     image_process_context_.camera_intrinsic_, image_process_context_.camera_distortion_);
@@ -101,8 +100,6 @@ void ChessboardPoseEstimate::process()
     // such at it won't block further notification from other thread, ie.,
     // it is used to address the above @case 1
     guard.unlock();
-
-    sequence = sync_->get_sequence_number();
 
     // Get a frame reference, and it could be changed during the process
     cv::Mat image = sync_->get_image();
