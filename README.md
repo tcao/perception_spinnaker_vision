@@ -1,5 +1,5 @@
 # Machine Vision Perception based on Spinnaker Cameras
-The module contains Teledyne/FLIR/Point Grey camera drive and associated testing code  
+The module contains Teledyne/FLIR/Point Grey camera drive, camera configuration tool, streaming application, chessboard and/or Apriltag target detection and pose estimation.  
 Currently only GigE/PoE cameras are supported.
 
 ## Thanks
@@ -16,12 +16,13 @@ Thanks Maxar for donating hours and allowing me, as a Maxar Space Robotics Softw
 - [macOS]  
 `brew install opencv`
 
-#### (Optional) gstreamer 1.0 (required by streaming app)
+#### (Optional) gstreamer 1.0 (required by streaming app)  
+It is enabled by default in `spinnaker_perception_apps` package. To disable it do the following in `CMakeLists.txt`:  
+`set(STREAMING FALSE)`  
+When enabled, install dependencies following the steps:
 - [Ubuntu] (https://gstreamer.freedesktop.org/documentation/installing/on-linux.html?gi-language=c) - Installation
 - [macOS]  
 `brew install gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav`
-- If you don't need streaming, make the following change at CMakeLists.txt to not use it:  
-`set(STREAMING FALSE)`
 
 #### ament-cmake
 The code is design to be able to run in ROS.
@@ -30,8 +31,17 @@ If you don't have ament-cmake installed, and you can either
 - Install ament-cmake package
 
 #### ROS 2
-spinnaker_ros2 package should be built in ROS2 Foxy or above.
+spinnaker_ros2 package should be built in ROS2 Foxy or Humble.
 
+#### Apriltag
+- [Apriltag] (https://github.com/AprilRobotics/apriltag.git) - Apriltag  
+It is used in `spinnaker_ros2` package when enabled
+- [Ubuntu]  
+Apriltag is enabled by default. You can disable it by making the following change to spinnaker_ros2/CMakeLists.txt:  
+`set(ENABLE_APRILTAG FALSE)`
+- [macOS]  
+Apriltag is disabled by default. You can enable it by passing extra option for colcon build:  
+`--cmake-args -DENABLE_APRILTAG=ON`
 ### Running Dependencies
 Same as the build dependencies, plus the following to play streaming video.
 #### (Optional) FFmpeg
@@ -39,6 +49,9 @@ Same as the build dependencies, plus the following to play streaming video.
 `sudo apt install ffmpeg`
 - [macOS]  
 `brew install ffmpeg`
+
+#### (Optional) Apriltag
+Same as Build Dependencies
 
 ## Build
 By default, 
@@ -129,7 +142,7 @@ Optional: If you have a chessboard pattern used for camera calibration, put it i
 where `-c 0` is for GigEV camera 0, `-x ./calib.xml` specifies the calibration data (the file location could be different, and a default one is provided).  
 If the chessboard used has different grid size than the default (9x6), specify this in command line option:  
 `-w 9 -h 6`  
-<img width="512" src="resources/object_detect_pose_estimate.gif" alt="pose estimation"/>  
+<img width="512" src="resources/multi_object_detect_pose_estimate.gif" alt="pose estimation"/>  
 Example (publish when the binary is enabled with ENABLE_SENSOR_TOPIC as indicated above):  
 `ros2 run spinnaker_ros2 spinnaker_ros2 -c 0 -x ./calib.xml --ros-args -r spinnaker_ros2/image:=image`  
 Here the default topic `spinnaker_ros2/image` is remapped to regular topic `image`.
