@@ -66,11 +66,10 @@ apriltag_family_entry apriltag_family_entries[] = {
 };
 
 static const rclcpp::Logger ApriltagLogger = rclcpp::get_logger("apriltag_processor");
-static const int processorID(2);
 
 ApriltagPoseEstimate::ApriltagPoseEstimate(
-  spinnaker_ros2::ProcessingSyncPtr sync, std::string family, float size)
-: ImageProcessInstance(sync),
+  spinnaker_ros2::ProcessingSyncPtr sync, uint32_t id, std::string family, float size)
+: ImageProcessInstance(sync, id),
   family_(family),
   size_(size)
 {
@@ -132,15 +131,9 @@ void ApriltagPoseEstimate::process()
   static uint32_t count = 0;
   while (!image_process_context_.processing_exit_) {
     count++;
-    RCLCPP_INFO(
-      ApriltagLogger,
-      "apriltag ready: %d", sync_->get_sequence_number());
     std::unique_lock<std::mutex> guard(image_process_context_.processing_ready_mutex_);
     image_process_context_.processing_ready_condition_.wait(guard);
-    RCLCPP_INFO(
-      ApriltagLogger,
-      "apriltag run: %d", sync_->get_sequence_number());
-    spinnaker_ros2::RaiiSync submit_sync(sync_, processorID, sync_->get_sequence_number());
+    spinnaker_ros2::RaiiSync submit_sync(sync_, id_, sync_->get_sequence_number());
     // Now notification is received and the mutex is locked
     if (image_process_context_.processing_exit_) {
       break;
@@ -172,7 +165,6 @@ void ApriltagPoseEstimate::process()
       .buf = gray_image.data,
     };
 
-    RCLCPP_INFO(ApriltagLogger, "apriltag detecting");
     // Perform detection
     errno = 0;
     zarray_t * detections = apriltag_detector_detect(tag_detector, &image_data);
@@ -199,9 +191,7 @@ void ApriltagPoseEstimate::process()
     }
 
     // Ready for overlay composing
-    RCLCPP_INFO(ApriltagLogger, "detected tag #: %d", zarray_size(detections));
-    sync_->enter_critical_section(true);
-    RCLCPP_INFO(ApriltagLogger, "enter cs: %p", image.data);
+    sync_->enter_critical_section(true, id_);
     for (int i = 0; i < zarray_size(detections); i++) {
       apriltag_detection_t * det;
       zarray_get(detections, i, &det);
@@ -247,9 +237,7 @@ void ApriltagPoseEstimate::process()
         cv::Scalar(0xff, 0xff, 0xff),
         2);
     }
-    RCLCPP_INFO(ApriltagLogger, "detected tags processed");
-    sync_->enter_critical_section(false);
-    RCLCPP_INFO(ApriltagLogger, "exit cs");
+    sync_->enter_critical_section(false, id_);
 
     apriltag_detections_destroy(detections);
   }

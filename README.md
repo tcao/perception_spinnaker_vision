@@ -141,7 +141,11 @@ You can run any image viewer to show acquired images. One **important** note is,
 Please see the code for details.  
 Example:  
 If you installed package `image_tools` (from `https://github.com/ros2/demos`), run it to view `image` topic as:  
-`ros2 run image_tools showimage`
+`ros2 run image_tools showimage`  
+Performance:  
+Tests are done on macOS and Ubuntu 22, with image acquisition running in 1024x768 resolution, and 13.22 Hz frame rate.  
+chessboard detection and pose estimation takes longer than Apiltag (24 tags), and is in the range of 45ms. Consider both processors are running in parallel, plus overlay composition, opencv rendering and other system overhead, the system can handle up to 20 Hz frame rate of acquisition.  
+When a new image acquisition arrives, if all not all processors are done, overlays for finished processors will be flushed. Unfinished processors will abort the operation once getting a chance therefore there will be no overlays. 
 
 ## Limitation
 1. Currently, only Point Grey's GigE/PoE camera is supported.

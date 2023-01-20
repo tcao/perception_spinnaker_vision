@@ -35,7 +35,7 @@ class ChessboardPoseEstimate : public spinnaker_ros2::ImageProcessInstance
 {
 public:
   ChessboardPoseEstimate(
-    spinnaker_ros2::ProcessingSyncPtr sync,
+    spinnaker_ros2::ProcessingSyncPtr sync, uint32_t id,
     uint32_t grid_width, uint32_t grid_height, float scale
   );
 

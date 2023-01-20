@@ -20,6 +20,12 @@
 /// @Thanks Maxar. This code is done in Maxar time (ting.cao@maxar.com)
 ///
 
+#include "spinnaker_ros2/spinnaker_ros2.hpp"
+#include "spinnaker_ros2/chessboard_pose_estimate.hpp"
+#if ENABLE_APRILTAG
+  #include "spinnaker_ros2/apriltag_pose_estimate.hpp"
+#endif
+
 // STD
 #include <string>
 #include <vector>
@@ -29,13 +35,6 @@
 #include <thread>
 #include <condition_variable>
 #include <filesystem>
-
-#include "spinnaker_driver/spinnaker_driver.hpp"
-#include "spinnaker_ros2/spinnaker_ros2.hpp"
-#include "spinnaker_ros2/chessboard_pose_estimate.hpp"
-#if ENABLE_APRILTAG
-  #include "spinnaker_ros2/apriltag_pose_estimate.hpp"
-#endif
 
 // OpenCV headers
 #include "opencv2/opencv.hpp"
@@ -75,6 +74,9 @@ void signal_handler(int signal)
 
 namespace spinnaker_ros2
 {
+// Instantiate static variables for class ProcessingSync
+volatile std::atomic<bool> ProcessingSync::locked_ = false;
+
 // Instantiate static variables for RaiiSync
 uint32_t RaiiSync::sync_count_ = 0;
 std::mutex RaiiSync::sync_count_critical_section_;
@@ -84,7 +86,7 @@ void SpinnakerRos2::add_image_process_instance(ImageProcessInstancePtr instance)
   image_process_instances_.push_back(instance);
 }
 
-bool SpinnakerRos2::initialize(const cli_parameters & parameters)
+bool SpinnakerRos2::initialize(const cli_parameters & parameters, uint32_t processor_count)
 {
   // Initialize an OpenCV named window
   // @remark It must be called in the main thread
@@ -106,6 +108,11 @@ bool SpinnakerRos2::initialize(const cli_parameters & parameters)
   fs["Intrinsic"] >> camera_intrinsic_;
   fs["Distortion"] >> camera_distortion_;
 
+  // ProcessingSync
+  sync_lock_status_.resize(processor_count);
+  for (uint32_t i = 0; i < sync_lock_status_.size(); i++) {
+    sync_lock_status_[i] = false;
+  }
   // Start image processor(s)'s thread(s)
   for (ImageProcessInstancePtr instance : image_process_instances_) {
     std::thread(&ImageProcessInstance::process, instance).detach();
@@ -173,7 +180,6 @@ void SpinnakerRos2::acquired(const spinnaker_driver::AcquiredImage * img)
         break;
     }
     if (converted) {
-      // RCLCPP_INFO(LOGGER, "acquired: %d", count);
       if (image_handler) {
         // Call user logic if it is installed
         // image_handler(image_);
@@ -240,8 +246,6 @@ void SpinnakerRos2::image_process()
   uint32_t sequence_id = acquired_count_;
   bool flush_wait = false;
   while (!image_process_exit_) {
-    // May not need RaiiSync to protect image rendering
-    RCLCPP_INFO(LOGGER, "\nmain loop ready");
     // unique_lock instead of lock_guard is used because of conditional_variable's
     // nature which performs lock and unlock during its wait
     std::unique_lock<std::mutex> guard(this->frame_ready_mutex_);
@@ -250,8 +254,6 @@ void SpinnakerRos2::image_process()
     // wait for frame_ready_condition_.notify_one to lock again
     frame_ready_condition_.wait(guard);
     // Now frame_ready_mutex_ is locked again
-
-    RCLCPP_INFO(LOGGER, "\nmain loop run %d/%d", sequence_id, acquired_count_);
 
     // image_process_exit_ could be changed after the above potential long wait,
     // which could be forced to abort, so let's check again
@@ -279,15 +281,15 @@ void SpinnakerRos2::image_process()
         std::this_thread::sleep_for(guiFlushingWaitMs);
         wait_count++;
       }
-      RCLCPP_INFO(LOGGER, "pipeline waited %u", wait_count);
       // Deep copy acquired image
       processing_image_ = image_.clone();
     }
+    // Now processing_image_ holds the new acquisition
 
     // Backup current sequence #, since it could be changed during this loop iteration
     sequence_id = acquired_count_;
 
-    // Notify all processors an acquisition is ready
+    // Notify all processors another acquisition is ready
     for (ImageProcessInstancePtr instance : image_process_instances_) {
       instance->ready();
     }
@@ -296,7 +298,6 @@ void SpinnakerRos2::image_process()
     {
       // Critical section to avoid concurrent image manipulation
       enter_critical_section(true);
-      RCLCPP_INFO(LOGGER, "enter cs: %p", processing_image_.data);
       // Annotation
       static char counter_label[128] = {0};
       snprintf(counter_label, sizeof(counter_label), "%d", sequence_id);
@@ -341,7 +342,6 @@ void SpinnakerRos2::image_process()
       // @remark Note the rendering is done once per acquistion
       // Critical section exits
       enter_critical_section(false);
-      RCLCPP_INFO(LOGGER, "exit cs");
     }
     // guard is unlocked
   }
@@ -353,9 +353,6 @@ void SpinnakerRos2::image_process()
  */
 void SpinnakerRos2::gui_timer_callback()
 {
-  RCLCPP_INFO(
-    LOGGER, "timer fired: seq %u, by processor %d: %p",
-    get_sequence_number(), who_submit_, processing_image_.data);
   // Make sure to display the current acquired/synthesized image
   // Skip enter_critical_section calls in purpose
   std::unique_lock<std::mutex> guard(critical_section_);
@@ -366,24 +363,41 @@ void SpinnakerRos2::gui_timer_callback()
 
   processin_image_done_ = true;
 
-  RCLCPP_INFO(LOGGER, "timer done: %u", get_sequence_number());
   gui_timer_->cancel();
 }
 
 #pragma mark Overrides for ProcessingSync
-void SpinnakerRos2::enter_critical_section(bool enter)
+void SpinnakerRos2::enter_critical_section(bool enter, uint32_t id)
 {
   try {
     if (enter) {
+      if (ProcessingSync::locked_) {
+        // back up the lock state
+        sync_lock_status_[id] = true;
+      }
       critical_section_lock_.lock();
       // @remark Direct use critical_section_.lock works as well
+      // There 2 possibilities to enter here
+      // 1 - previously unlocked, but now it is locked
+      // 2 - previously locked then unlocked by other, now it is not locked
+      if (sync_lock_status_[id]) {
+        critical_section_lock_.lock();
+      }
     } else {
+      // It is possible critical_section_lock_ is already unlocked
       critical_section_lock_.unlock();
       // @remark Direct use critical_section_.unlock works as well
+
+      // Reset lock state if the processor is locked
+      if (sync_lock_status_[id]) {
+        sync_lock_status_[id] = false;
+      }
+
+      ProcessingSync::locked_ = false;
     }
   } catch (std::exception & e) {
-    std::cerr << "exception - enter_critical_section: " << enter << ", with " <<
-      e.what() << std::endl;
+    RCLCPP_ERROR(LOGGER, "enter_critical_section, enter=%d, from=%d", enter, id);
+    std::cerr << "exception details: " << std::endl << e.what() << std::endl;
     std::cerr << std::flush;
   }
 }
@@ -413,8 +427,8 @@ const cv::Mat SpinnakerRos2::get_image() const
 
 void SpinnakerRos2::submit(int who)
 {
-  RCLCPP_INFO(LOGGER, "submit: by %d/previous %d", who, who_submit_);
-  who_submit_ = who;
+  // It is important to know who request it during debugging/profiling
+  (void)who;
   processin_image_done_ = false;
   // Release for displaying - pose estimation may add another overlay
   gui_timer_->reset();
@@ -599,22 +613,22 @@ int main(int argc, char * argv[])
 
   executor.add_node(spinnaker_ros2);
 
+  // The main acquisition thread is conaidered as a process with ID as 0
+  uint32_t processor_id = 1;
   // Instantiate chessboard pose estimate processor
-#if 1
   auto chessboard_processor = std::make_shared<ChessboardPoseEstimate::ChessboardPoseEstimate>(
-    spinnaker_ros2,
+    spinnaker_ros2, processor_id++,
     parameters.dimension_.width, parameters.dimension_.height, parameters.scale_);
   spinnaker_ros2->add_image_process_instance(chessboard_processor);
-#endif
 #if ENABLE_APRILTAG
   auto apriltag_processor = std::make_shared<ApriltagPoseEstimate::ApriltagPoseEstimate>(
-    spinnaker_ros2,
+    spinnaker_ros2, processor_id++,
     parameters.tag_family_,
     parameters.tag_size_);
   spinnaker_ros2->add_image_process_instance(apriltag_processor);
 #endif
 
-  if (spinnaker_ros2->initialize(parameters)) {
+  if (spinnaker_ros2->initialize(parameters, processor_id)) {
     // Instantiate GigEV driver
     spinnaker_driver::SpinnakerDriverGigE gigev_driver;
     std::cout << "Connecting to camera: " << parameters.camera_ << std::endl;

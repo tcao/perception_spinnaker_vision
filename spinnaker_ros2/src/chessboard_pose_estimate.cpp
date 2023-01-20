@@ -28,12 +28,11 @@
 namespace ChessboardPoseEstimate
 {
 static const rclcpp::Logger ChessboardLogger = rclcpp::get_logger("chessboard_processor");
-static const int processorID(1);
 
 ChessboardPoseEstimate::ChessboardPoseEstimate(
-  spinnaker_ros2::ProcessingSyncPtr sync,
+  spinnaker_ros2::ProcessingSyncPtr sync, uint32_t id,
   uint32_t grid_width, uint32_t grid_height, float scale)
-: ImageProcessInstance(sync),
+: ImageProcessInstance(sync, id),
   scale_(scale)
 {
   image_process_context_.ready_ = false;
@@ -83,11 +82,9 @@ void ChessboardPoseEstimate::process()
   static uint32_t count = 0;
   while (!image_process_context_.processing_exit_) {
     count++;
-    RCLCPP_INFO(ChessboardLogger, "chessboard ready: %d", sync_->get_sequence_number());
     std::unique_lock<std::mutex> guard(image_process_context_.processing_ready_mutex_);
     image_process_context_.processing_ready_condition_.wait(guard);
-    RCLCPP_INFO(ChessboardLogger, "chessboard run: %d", sync_->get_sequence_number());
-    spinnaker_ros2::RaiiSync submit_sync(sync_, processorID, sync_->get_sequence_number());
+    spinnaker_ros2::RaiiSync submit_sync(sync_, id_, sync_->get_sequence_number());
 
     // Now notification is received and the mutex is locked
     if (image_process_context_.processing_exit_) {
@@ -123,7 +120,6 @@ void ChessboardPoseEstimate::process()
       // to shortcut the detecting when there is no chessboard
       cv::CALIB_CB_ADAPTIVE_THRESH | cv::CALIB_CB_FAST_CHECK | cv::CALIB_CB_NORMALIZE_IMAGE
     );
-    RCLCPP_INFO(ChessboardLogger, "detected: %d", found);
 
     if (image_process_context_.processing_exit_) {
       break;
@@ -148,7 +144,6 @@ void ChessboardPoseEstimate::process()
         0.1   // min accuracy
       )
     );
-    RCLCPP_INFO(ChessboardLogger, "subpix");
 
     if (image_process_context_.processing_exit_) {
       break;
@@ -175,7 +170,6 @@ void ChessboardPoseEstimate::process()
       }
       continue;
     }
-    RCLCPP_INFO(ChessboardLogger, "solved: %d", solved);
 
     if (image_process_context_.processing_exit_) {
       break;
@@ -225,10 +219,8 @@ void ChessboardPoseEstimate::process()
       }
     }
 
-    RCLCPP_INFO(ChessboardLogger, "enter cs: %p", image.data);
-
     // Ready for overlay composing
-    sync_->enter_critical_section(true);
+    sync_->enter_critical_section(true, id_);
 
     // Draw the corners - when solved is false, lines are in red
     cv::drawChessboardCorners(image, grid_size_, detected_corners, solved);
@@ -284,8 +276,7 @@ void ChessboardPoseEstimate::process()
         2     // thickness
       );
     }
-    sync_->enter_critical_section(false);
-    RCLCPP_INFO(ChessboardLogger, "exit cs");
+    sync_->enter_critical_section(false, id_);
   }   // while
 }
 }  // namespace ChessboardPoseEstimate

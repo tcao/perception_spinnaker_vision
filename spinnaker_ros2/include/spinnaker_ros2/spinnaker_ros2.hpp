@@ -27,6 +27,7 @@
 #include <memory>
 #include <vector>
 #include <mutex>
+#include <atomic>
 #include <condition_variable>
 
 // ROS2
@@ -76,21 +77,32 @@ public:
    * @param enter - Enter critical section when true, exit when false
    * @remark THis is a blocking call
    */
-  virtual void enter_critical_section(bool enter) = 0;
+  virtual void enter_critical_section(bool enter, uint32_t id = 0) = 0;
   virtual uint32_t get_sequence_number() = 0;
   virtual bool is_sequence_number_changed(uint32_t previous) = 0;
   virtual void get_camera_parameters(
     cv::Mat & camera_intrinsic, cv::Mat & camera_distortion) const = 0;
+
   /**
    * @brief Submit composed image for rendering
    */
   virtual void submit(int who = 0) = 0;
+
   /**
    * @brief Get the image object
    *
    * @return const cv::Mat
    */
   virtual const cv::Mat get_image() const = 0;
+
+public:
+  static volatile std::atomic<bool> locked_;
+  /**
+   * @brief lock status vector for each processor
+   * @remark process IDs are used as index to the vector
+   * so they must be in sequential starting from 0
+   */
+  std::vector<bool> sync_lock_status_;
 };
 
 typedef std::shared_ptr<ProcessingSync> ProcessingSyncPtr;
@@ -101,13 +113,11 @@ typedef std::shared_ptr<ProcessingSync> ProcessingSyncPtr;
 class RaiiSync
 {
 public:
-  RaiiSync(ProcessingSyncPtr sync, int id, uint32_t sid)
+  RaiiSync(ProcessingSyncPtr sync, uint32_t id, uint32_t sid)
   : sync_(sync), id_(id), sid_(sid)
   {
     sync_count_critical_section_.lock();
     sync_count_++;
-    std::cout << "raii " << id_ << " instantiated: " << sync_count_ << " for seq: " <<
-      sid_ << std::endl;
     sync_count_critical_section_.unlock();
   }
   virtual ~RaiiSync()
@@ -115,8 +125,6 @@ public:
     sync_count_critical_section_.lock();
     if (0 != sync_count_) {
       sync_count_--;
-      std::cout << "raii " << id_ << " destroying: " << sync_count_ << " for seq: " <<
-        sid_ << std::endl;
       if (0 == sync_count_) {
         sync_->submit(id_);
       }
@@ -126,7 +134,7 @@ public:
 
 protected:
   ProcessingSyncPtr sync_;
-  int id_;
+  uint32_t id_;
   uint32_t sid_;
 
 public:
@@ -145,13 +153,14 @@ class ImageProcessInstance
     std::condition_variable processing_ready_condition_;
     volatile bool ready_;
     bool processing_exit_;
+    // The following two variables are there for performance reason
     cv::Mat camera_intrinsic_;
     cv::Mat camera_distortion_;
   };
 
 public:
-  explicit ImageProcessInstance(ProcessingSyncPtr sync)
-  : sync_(sync)
+  explicit ImageProcessInstance(ProcessingSyncPtr sync, uint32_t id)
+  : sync_(sync), id_(id)
   {}
   virtual ~ImageProcessInstance() {}
   virtual void ready() = 0;
@@ -159,6 +168,7 @@ public:
 
 protected:
   ProcessingSyncPtr sync_;
+  uint32_t id_;
   image_process_context image_process_context_;
 };
 typedef std::shared_ptr<ImageProcessInstance> ImageProcessInstancePtr;
@@ -202,8 +212,6 @@ public:
 
     publisher_ = create_publisher<sensor_msgs::msg::Image>(
       topic_name, qos /*rclcpp::SensorDataQoS()*/);
-
-    who_submit_ = -1;
   }
   /**
    * @brief Destroy the Spinnaker Ros 2 object
@@ -224,7 +232,7 @@ public:
    * @return true
    * @return false
    */
-  bool initialize(const cli_parameters & parameters);
+  bool initialize(const cli_parameters & parameters, uint32_t processor_count);
 
   #pragma mark Overrides for image_capture
   void acquired(const spinnaker_driver::AcquiredImage * img) override;
@@ -268,7 +276,7 @@ public:
   void gui_timer_callback(void);
 
   #pragma mark Overrides for ProcessingSync
-  void enter_critical_section(bool enter) override;
+  void enter_critical_section(bool enter, uint32_t id = 0) override;
   uint32_t get_sequence_number() override;
   bool is_sequence_number_changed(uint32_t previous) override;
   void get_camera_parameters(
@@ -327,8 +335,6 @@ protected:
    * @brief Image processing context stack
    */
   std::vector<ImageProcessInstancePtr> image_process_instances_;
-
-  int who_submit_;
 };  // class SpinnakerRos2
 }  // namespace spinnaker_ros2
 #endif  // SPINNAKER_ROS2__SPINNAKER_ROS2_HPP_

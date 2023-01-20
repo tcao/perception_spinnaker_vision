@@ -42,7 +42,7 @@ class ApriltagPoseEstimate : public spinnaker_ros2::ImageProcessInstance
 {
 public:
   ApriltagPoseEstimate(
-    spinnaker_ros2::ProcessingSyncPtr sync, std::string family, float size
+    spinnaker_ros2::ProcessingSyncPtr sync, uint32_t id, std::string family, float size
   );
 
 #pragma mark spinnaker_ros2::ImageProcessInstance
